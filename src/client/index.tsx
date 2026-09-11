@@ -10,10 +10,19 @@
  * framework standard kit, including the `useChat` snapshot hook that exposes the
  * same turn usage the native pill renders.
  *
+ * Isolation contract: this plugin renders INSIDE the row that also carries the
+ * official copy / branch / usage / time controls, so the registered entry is the
+ * chip behind an error boundary (see `Boundary.tsx`). A failure here can only
+ * remove the chip — never the official controls beside it. The plugin adds one
+ * list entry, injects one tagged `<style>` element, and registers one locale
+ * namespace; it touches no other DOM, no store, and no host service.
+ *
  * @module dsh-session-cost/client
  */
 
+import type { ReactNode } from 'react'
 import type { ClientContextLike, CostChipProps, LocaleServiceLike } from './contract.ts'
+import { CostChipBoundary } from './Boundary.tsx'
 import { CostChip } from './CostChip.tsx'
 import { en, NS, zh } from './locales.ts'
 import { installStyles } from './styles.ts'
@@ -21,8 +30,18 @@ import { installStyles } from './styles.ts'
 /** Required services: the slot registry (the only hard dependency). */
 export const inject = ['slots']
 
-/** Type-level check that the registered component matches the slot's props. */
-const entryComponent = CostChip satisfies (props: CostChipProps) => unknown
+/**
+ * The registered entry: the chip behind a containment boundary.
+ * @param props - the slot owner plus the framework standard seats.
+ * @returns the contained chip.
+ */
+function CostChipEntry(props: CostChipProps): ReactNode {
+  return (
+    <CostChipBoundary>
+      <CostChip {...props} />
+    </CostChipBoundary>
+  )
+}
 
 /**
  * Client plugin body: inject the sheet, publish dictionaries when the locale
@@ -48,5 +67,5 @@ export function apply(ctx: ClientContextLike): void {
     // not list entries, so this chip sits in the plugin cell of the row.
     order: 20,
     locale: NS,
-  }, entryComponent))
+  }, CostChipEntry))
 }

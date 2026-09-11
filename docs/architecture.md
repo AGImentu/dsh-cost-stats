@@ -69,6 +69,7 @@
 
 | 取舍 | 理由 |
 |---|---|
+| 条目包在**错误边界**(`Boundary.tsx`)里注册 | 它渲染在官方控件(复制/分支/用量/用时)所在的同一行子树里。React 的未捕获渲染错误会一直向上抛到最近边界——如果那层边界在整行之上的话,官方控件会被一起卸载。边界放在本插件内部,等于把"插件坏了只会少一个胶囊"变成结构性保证,`scripts/smoke-client-bundle.mjs` 里有对应的抛错隔离断言 |
 | 类型用**镜像声明**而非 import | npm 上的 DSH 客户端内部包版本严重滞后(`0.1.2-alpha.x`/`0.0.1-rc.x` vs shell `0.1.5-rc.2`),import 它们等于把插件钉在一个并不存在的宿主上。镜像 + 运行时防御读取 → 字段消失时退化为"不渲染" |
 | 只依赖 `react` / `react/jsx-runtime` / `react-dom` | 三者都在 shell 的冻结模块表种子(`packages/client/web/src/seed.ts`);其余一律不引,所以不会被内部包版本卡住 |
 | 样式用**纯 CSS 字符串 + `data-plugin` 标签** | 官方 CSS Modules 能力在 DSH 的 tsdown 预设里,外部工程无法 import;本插件样式很小,类名哈希收益为零 |
