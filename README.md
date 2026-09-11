@@ -10,6 +10,30 @@
 
 ---
 
+## 📸 效果
+
+**① 每条消息旁的 `≈¥0.100` 费用胶囊**(点开是这一回合的分档明细)
+
+![费用胶囊与明细面板](docs/images/turn-cost-chip.png)
+
+面板里给出的每一项都能核对:`缓存命中 99.9%`;`未缓存输入 1,359 tok ×¥2/M = ¥0.0027`;
+`缓存读取 1,255,552 tok ×¥0.04/M = ¥0.050`;`输出 5,839 tok ×¥8/M(其中推理 3,610)= ¥0.047`;
+单价是**当前计费时段的档位**(图里是高峰时段),并同时给出 `¥` 与 `$` 两种合计。
+底部还能看到本插件与官方「用量 1.3M tok」「用时 37 秒」并排在同一行,互不干扰。
+
+**② 设置 → 费用统计:每一次计费项的流水**(默认就是今天,可换日期/月份)
+
+![费用统计页](docs/images/cost-stats-page.png)
+
+- 合计卡片:`¥14.60 $2.19`、`回复 17 压缩 1 会话 2 用量 236.60M`;
+- 逐条明细:时间 / 会话 / 用量 / 费用,时间精确到分钟,费用同行给出 `¥` 与 `$`;
+- `压缩` 标签:上下文压缩是独立计费项(图里 14:17 那行 ¥1.45),它不属于任何回复,官方胶囊不显示它;
+- 分页:每页 15 条,底部 `第 1 / 2 页 · 共 18 条 · 每页 15 条`。
+
+> 两张图都是本机真实数据(2026-09-11),不是示意图。
+
+---
+
 ## ✨ 功能
 
 | | |
@@ -214,6 +238,7 @@ scripts/
   smoke-client-bundle.mjs 产物契约冒烟(无浏览器)
   verify-balance.mjs      独立复算(绕过宿主直读会话日志)← 余额对账
 docs/architecture.md      接入契约与设计取舍
+docs/images/              README 里那两张效果截图(胶囊 / 统计页)
 ```
 
 ---
@@ -247,7 +272,7 @@ docs/architecture.md      接入契约与设计取舍
   想看全部历史,用**设置 → 费用统计**(它走宿主路由读持久化日志)。
 - 统计页读取存储里**最近 120 个非空会话**的完整日志,按 TTL 缓存;读取失败或没有任何已计价回复的会话计入 `skipped`,不影响其余行。
 - 统计页与胶囊都是**按官方价目表的估算**,不是账单:不含四舍五入、促销与 provider 侧最终结算细节;
-  标题生成、压缩等少量模型调用不在折叠范围内(实测差值 < 1 美分)。
+  标题生成等少量模型调用不在折叠范围内(实测差值 < 1 美分);**上下文压缩已在 0.6.0 计入**(见下一条)。
 - 只在 DeepSeek 官方路由(`provider` 含 `deepseek`)上有价目;第三方 provider 标 `无价目` 且不计入合计。
 - **上下文压缩**已作为独立一行计入(带「压缩」标签):它不属于任何回合,官方「用量」胶囊不显示它,
   但它是真实扣费(实测一次约 $0.2)。0.6.0 之前它不在合计里,这是过去与余额对不上的唯一系统性原因。
@@ -265,13 +290,21 @@ docs/architecture.md      接入契约与设计取舍
 
 ## English (overview)
 
-`dsh-session-cost` is a client-only DeepSeek Harness Web plugin that shows the **cost of each assistant
-turn** next to the native turn-usage pill, using the provider-reported token buckets (exact) and the
-official published DeepSeek price tables in both CNY and USD. Clicking the chip opens an itemized panel
-(billed model, peak/off-peak window, cache-hit ratio, uncached/cached input and output lines, turn total,
-session total over the loaded turns). It renders **nothing** when a turn cannot be priced, makes no
-network request, reads no credentials, and needs no core change — it registers into the documented
-`conversation.chat.assistant-actions` slot and depends only on the frozen platform modules.
+`dsh-session-cost` is a DeepSeek Harness Web plugin that shows the **cost of each assistant turn** next to
+the native turn-usage pill, using the provider-reported token buckets (exact) and the official published
+DeepSeek price tables in both CNY and USD. Clicking the chip opens an itemized panel (billed model,
+peak/off-peak window, cache-hit ratio, uncached / cached input and output lines, turn total, session total
+over the loaded turns) — see the screenshots above. A **Cost stats** settings page lists every billed item
+of every stored session, per reply and per context compaction, with day/month pickers and 15-row pages.
+
+It renders **nothing** when an item cannot be priced, reads no credentials, and needs no core change: it
+registers into the documented `conversation.chat.assistant-actions` and `settings.section` slots, depends
+only on the frozen platform modules, and reads the durable session logs from its own host route
+(`GET /session-cost/usage`, same origin, no external network). Both entries sit behind an error boundary, so
+a plugin failure can only remove the plugin's own UI, never the official controls beside it.
+
+Verified against the account balance: three reconciliation windows on 2026-09-11 matched to within one cent
+(0.25 vs 0.249, 0.78 vs 0.77, and 0.200 vs 0.200), with context compactions folded in from 0.6.0 on.
 
 Install: `dsh plugin --profile web add dsh-session-cost` (or `node scripts/install-local.mjs` from a
 checkout), then restart `dsh web` and hard-refresh the page.
