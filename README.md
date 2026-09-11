@@ -82,7 +82,7 @@
 ```sh
 git clone https://github.com/AGImentu/dsh-cost-stats && cd dsh-cost-stats
 pnpm install && pnpm build && pnpm pack          # 产出 dsh-cost-stats-<版本>.tgz
-dsh plugin --profile web add ./dsh-cost-stats-*.tgz
+dsh plugin --profile web add ./dsh-cost-stats-0.7.0.tgz   # 文件名按上一步的输出替换
 ```
 
 `dsh plugin add` 就是 `pnpm add` 的转发器,所以 tarball、目录、registry 名都接受;它会顺带把
@@ -117,8 +117,8 @@ dsh plugin --profile web add dsh-cost-stats@latest
 ```text
 帮我装 dsh-cost-stats 插件（DSH 费用统计），步骤：
 1. git clone https://github.com/AGImentu/dsh-cost-stats 到 ~/Code/dsh-cost-stats
-2. 在该目录执行 pnpm install && pnpm build && pnpm pack
-3. 执行 dsh plugin --profile web add ./dsh-cost-stats-*.tgz
+2. 在该目录执行 pnpm install && pnpm build && pnpm pack（记下产出的 .tgz 文件名）
+3. 执行 dsh plugin --profile web add ./<上一步的 .tgz 文件名>
 4. 完成后提醒我：重启 dsh web，然后硬刷新浏览器（Ctrl/Cmd+Shift+R）
 遇到报错先查 https://github.com/AGImentu/dsh-cost-stats 的 README「常见问题」表。
 ```
@@ -135,7 +135,7 @@ dsh plugin --profile web add dsh-cost-stats@latest
 
 ```sh
 cd ~/Code/dsh-cost-stats && git pull && pnpm install && pnpm build && pnpm pack
-dsh plugin --profile web add ./dsh-cost-stats-*.tgz     # tarball 方式
+dsh plugin --profile web add ./<上一步产出的 .tgz>     # tarball 方式
 # 或 link: 方式：重新 pnpm run build 即可，profile 里已经是符号链接
 ```
 
