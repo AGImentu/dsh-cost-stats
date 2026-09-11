@@ -1,0 +1,21 @@
+# dsh-session-cost bundle patch
+#
+# This file is the `dsh.bundle.patch` layer of the package. When the plugin is
+# installed through the official CLI —
+#
+#   dsh plugin --profile <name> add dsh-session-cost
+#
+# — the command reconciles `dsh.profile.bundles` against installed packages and,
+# seeing this declaration, appends `dsh-session-cost` to the bundle stack. The
+# profile boot then merges THIS patch, exactly like the manual mount line. No
+# profile file edits needed: one command installs and mounts.
+#
+# The inserted row is the package's HOST half. That half is deliberately a no-op
+# cordis plugin: its only job is to be a live Loader row carrying this package's
+# `dsh.client` manifest declaration. `dsh-client-modules` scans live rows,
+# resolves each row's package.json, and composes the browser boot graph from the
+# `dsh.client` declaration — which is how `lib/client.js` (the slot entry that
+# renders the cost chip) reaches the browser.
+- insert:
+    - id: session-cost
+      name: 'dsh-session-cost'

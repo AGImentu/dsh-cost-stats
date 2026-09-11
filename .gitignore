@@ -1,0 +1,14 @@
+# Build output
+lib/
+node_modules/
+
+# Logs and local state
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Editors and OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
