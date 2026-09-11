@@ -6,33 +6,27 @@
  *
  * Loader contract
  *  1. the artifact registers the factory under EXACTLY the package name
- *     (`window.__ModuleLoader__.load({ id, factory })`) — the client-modules
- *     compose keys on the package name, so drift here means the row never
- *     materializes;
+ *     (`window.__ModuleLoader__.load({ id, factory })`);
  *  2. the factory resolves its externals through the injected `require` and
- *     returns a module with `inject` + `apply` (the cordis plugin shape);
+ *     returns `inject` + `apply` (the cordis plugin shape);
  *  3. `apply` contributes exactly two entries — the turn chip into
  *     `conversation.chat.assistant-actions` and the stats page into
- *     `settings.section` — and injects one tagged stylesheet.
+ *     `settings.section` — injecting one tagged stylesheet.
  *
  * Isolation contract
- *  4. both entries are contained by the error boundary, and that boundary really
- *     degrades to nothing instead of letting a render error escape — the promise
- *     that a failure here cannot take the official usage/time/branch controls or
- *     the settings content column down with it.
+ *  4. both entries sit behind the error boundary and that boundary degrades to
+ *     nothing: the chip with a throwing selector, the page with a throwing
+ *     translator. Nothing may escape into the action row or the settings column.
  *
  * Behavior
- *  5. the chip prices a real turn from a mirrored snapshot (and renders nothing
- *     without route attribution);
- *  6. the stats page folds a session-list snapshot into a priced table with a
- *     total, tags a subagent session, and marks a session whose model has no
- *     published price.
+ *  5. the chip prices a real turn from a mirrored snapshot and renders nothing
+ *     without route attribution;
+ *  6. the stats page renders its query switch and fetches the plugin host route.
  *
  * React is stubbed with a miniature element renderer: this checks the plugin's
  * own contract, not React's behavior. Run `pnpm run build` first.
  *
- * Usage: node scripts/smoke-client-bundle.mjs
- *
+ * @usage node scripts/smoke-client-bundle.mjs
  * @module dsh-session-cost/scripts/smoke-client-bundle
  */
 
@@ -55,7 +49,7 @@ const check = (label, condition) => {
   }
 }
 
-/** Minimal React surface: hooks pass through, `Component` supports boundaries. */
+/** Minimal React surface: hooks pass through, effects run, class components catch. */
 class Component {
   constructor(props) {
     this.props = props
@@ -71,8 +65,8 @@ Component.prototype.isReactComponent = {}
 const reactStub = {
   Component,
   useCallback: (fn) => fn,
-  useEffect: () => {},
-  useLayoutEffect: () => {},
+  useEffect: (fn) => { fn() },
+  useLayoutEffect: (fn) => { fn() },
   useMemo: (fn) => fn(),
   useRef: (value) => ({ current: value }),
   useState: (value) => [value, () => {}],
@@ -114,6 +108,7 @@ function collectText(node) {
 
 const loaded = []
 const styleTags = []
+const fetched = []
 const sandbox = {
   console,
   Intl,
@@ -126,6 +121,10 @@ const sandbox = {
   Array,
   JSON,
   String,
+  fetch: (url) => {
+    fetched.push(String(url))
+    return Promise.resolve({ ok: false, status: 503, statusText: 'stub', json: async () => ({}) })
+  },
   document: {
     querySelector: () => null,
     createElement: () => {
@@ -192,23 +191,22 @@ const label = typeof statsEntry?.options.label === 'function' ? statsEntry.optio
 check(`stats nav label is registrant copy (got "${label}")`, typeof label === 'string' && label.length > 0)
 
 // 4. Containment.
-let contained = 'escaped'
+let chipContained = 'escaped'
 try {
-  contained = String(renderTree(chipEntry.component({
+  chipContained = String(renderTree(chipEntry.component({
     messageId: 'm1',
     useChat: () => { throw new Error('boom') },
     t: undefined,
   })))
 } catch (error) {
-  contained = `threw: ${error.message}`
+  chipContained = `threw: ${error.message}`
 }
-check(`a throwing chip render is contained to null (got ${contained})`, contained === 'null')
+check(`a throwing chip render is contained to null (got ${chipContained})`, chipContained === 'null')
 
 let statsContained = 'escaped'
 try {
   statsContained = String(renderTree(statsEntry.component({
-    useSessions: () => { throw new Error('boom') },
-    t: undefined,
+    t: () => { throw new Error('boom') },
   })))
 } catch (error) {
   statsContained = `threw: ${error.message}`
@@ -246,40 +244,13 @@ const unpricedChip = renderTree(chipEntry.component({
 }))
 check('chip renders nothing without route attribution', unpricedChip === null)
 
-// 6. Stats page behavior: one priced session plus one with no published price.
-const sessionList = {
-  ids: ['priced', 'unknown'],
-  byId: {
-    priced: {
-      id: 'priced',
-      displayTitle: 'Priced chat',
-      updatedAt: Date.UTC(2026, 8, 14, 0, 0, 0),
-      projectionValues: {
-        tokenUsage: { uncachedInputTokens: 1_000_000, outputTokens: 1_000_000 },
-        modelSelection: { lastUsed: { provider: 'deepseek-official', model: 'deepseek-flash' } },
-      },
-    },
-    unknown: {
-      id: 'unknown',
-      displayTitle: 'Unknown model chat',
-      origin: 'subagent',
-      updatedAt: Date.UTC(2026, 8, 13, 0, 0, 0),
-      projectionValues: {
-        tokenUsage: { uncachedInputTokens: 500_000, outputTokens: 0 },
-        modelSelection: { lastUsed: { provider: 'openrouter', model: 'llama-4' } },
-      },
-    },
-  },
-}
-const statsText = collectText(renderTree(statsEntry.component({
-  useSessions: (selector) => selector(sessionList),
-  t: undefined,
-}))).join(' ')
-check(`stats page renders the total (got "${statsText.slice(0, 100)}")`, statsText.includes('费用合计') && statsText.includes('¥5'))
-check('stats page lists both sessions', statsText.includes('Priced chat') && statsText.includes('Unknown model chat'))
-check('stats page tags the subagent session', statsText.includes('子代理'))
-check('stats page marks the unpriced session', statsText.includes('无价目'))
-check('stats page offers day and month queries', statsText.includes('按日') && statsText.includes('按月'))
+// 6. Stats page: renders its query switch and asks the host for its payload.
+const statsText = collectText(renderTree(statsEntry.component({ t: undefined }))).join(' ')
+check(`stats page renders its heading (got "${statsText.slice(0, 40)}")`, statsText.includes('费用统计'))
+check('stats page offers day, month and all-replies queries',
+  statsText.includes('按日') && statsText.includes('按月') && statsText.includes('全部回复'))
+check(`stats page fetches the plugin host route (got ${JSON.stringify(fetched)})`,
+  fetched.includes('/session-cost/usage'))
 
 if (failures.length > 0) {
   console.error(`smoke: ${failures.length} check(s) failed`)

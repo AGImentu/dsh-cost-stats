@@ -58,11 +58,12 @@
 | 插槽 | `settings.section`(kind `list`,scope **`root`**) | `packages/client/ui-settings/src/client/contract/slots.ts` |
 | owner | 空(`SettingsSectionOwnerProps`)——页面的文案与内容全部由注册方自己拥有 | 同上 |
 | register 选项 | `id`(节键)/ `order`(导航位置)/ `label`(注册方本地化文案,可为 thunk)/ `locale` | 同上;`label` 为 thunk 的语义见 ui-slots `SlotOptions` |
-| 组件 props | `useSessions`(会话列表 + 当前选择,root 标准席位)+ `locale` 绑定的 `t` | `.../ui-session/src/client/index.ts`(`GlobalStandardProps` 合并);`.../ui-renderer/.../scoped-slots.tsx` |
+| 组件 props | 只有 `locale` 绑定的 `t`——页面自带数据来源(插件自己的宿主路由) | `.../ui-renderer/.../scoped-slots.tsx` |
 | 渲染位置 | 设置面板左侧导航一格 + 右侧内容列(`.options`,padding `0 24px 24px`,内容宽度约 560px) | `.../ui-settings-general/src/client/SettingsRoot.module.css` |
 | 声明方 | 运行时由 `ui-settings-general` 在自己的 children 声明表里登记 `settings.section` | 同包 `index.ts` |
 
-因为作用域是 `root`,这里**拿不到**会话作用域的 `useChat`——这正是统计页改用宿主投影(见 §3)的原因,而不是设计偏好。
+因为作用域是 `root`,这里**拿不到**会话作用域的 `useChat`;而页面要的是"每一次回复"的全局明细,
+浏览器手里只有当前会话已加载的那一段。所以统计页改用**插件自有的宿主路由**(见 §3.2),而不是设计偏好。
 
 ## 3. 数据流
 
@@ -75,21 +76,26 @@
                         └─> pricing.estimateTurnUsage(...) → 胶囊 + 明细面板
 ```
 
-### 3.2 统计页(逐会话,来自宿主投影)
+### 3.2 统计页(逐次回复,来自持久化日志)
 
 ```
-供应商 usage ──> 宿主会话投影:tokenUsage(累计分档)、modelSelection(实际使用的路由)
-                        └─> 客户端会话列表每行的 projectionValues(+ updatedAt / origin / title)
-                              └─> useSessions(选择器)→ session-costs.scanSessions(...)
-                                    └─> 日/月分桶 + 合计 → StatsSection
+持久化会话日志($DSH_HOME/sessions/**)
+   └─> host:ctx.sessionPersistence.list() → open(id,'read') → handle.read()
+         └─> host/turn-fold.ts:事件 → 每次回复(窗口 / 模型 / 分档 token)
+               └─> pricing.estimateTurnUsage(...) → GET /session-cost/usage(JSON,TTL 缓存)
+                     └─> client:fetch → stats-model(日/月分桶 + 筛选 + 合计)→ StatsSection
 ```
 
-- 这条路径**不加载聊天历史、不唤醒冷会话**:投影随会话列表一起到达(这就是它能覆盖整个列表的原因)。
-- `SessionSummary.projectionValues` 的类型是 `Partial<SessionProjectionMap>`——即所有投影键的并集;
-  未持有投影的行(从未跑过请求)会被 `scanSessions` 计入 `skipped`,界面上明确说明,而不是当成 0。
-- 选择器同样只返回存储引用(`state.ids` / `state.byId`),折叠发生在 `useMemo` 里。
+- **为什么在宿主侧**:逐条历史只存在于持久化日志里;浏览器只有当前会话已加载的窗口。
+  宿主读日志是唯一能覆盖"所有会话、全部历史"的位置,而且不需要激活任何冷会话。
+- **逐次精确**:模型取该次回复的 `message.source.provider/model`(缺失时回退到最近一条 `model/selection`),
+  高峰/空闲按该回合自身的 `turn/start`/`turn/end` 判定——比"按会话最近模型/最后活动"准。
+- **一次折叠,两处使用**:`turn-fold.ts` 是纯函数,宿主路由与 `scripts/verify-balance.mjs` 都用它,
+  所以"界面上显示的"和"独立复算的"不可能因为实现分叉而不一致。
+- **有界**:只读最近 `MAX_SESSIONS`(120)个非空会话,载荷按 `CACHE_TTL_MS`(20s)缓存,并发请求共享一次构建,
+  读不动的会话计入 `skipped` 而不是让整页失败。
 
-### 3.3 选择器的引用纪律(两条路径共有)
+### 3.3 选择器的引用纪律(聊天侧)
 
 - 选中 `turn-tail` 节点的方式:遍历 `snapshot.nodes.values()`,匹配
   `data.closing.finalNode.messageId === <本行 owner 的 messageId>`。
@@ -109,26 +115,41 @@
 | 面板用 `createPortal` + 视口钳制定位 | 与核心 stat 弹窗一致(`ui-chat/.../stat-dialog.module.css` 的皮肤),避免被聊天列的滚动容器裁剪 |
 | `order: 20` | 排在核心反馈条目(order 10)之后;原生用量/用时胶囊不是 list 条目,所以本插件独占插件单元格 |
 | 统计页 `order: 300` | 设置导航里排在出货分区与「侧边卡片」(order 100)之后——就是被要求的位置 |
-| 统计页走**宿主投影**而不是聊天快照 | 设置页是 `root` 作用域,拿不到 `useChat`;而会话列表每行自带 `projectionValues`,于是整表可算且无需唤醒冷会话。代价是粒度降到会话级(见 §3.2 与 CHANGELOG 的边界说明) |
+| 统计页走**插件自有宿主路由 + 日志折叠** | 设置页是 `root` 作用域,拿不到 `useChat`;而"每一次回复"的全局明细只存在于持久化日志里。宿主读日志是唯一能覆盖全部历史的实现,且客户端只做分组合计 → 明细与合计永远同一批数字 |
+| 折叠逻辑放在**纯函数**里(`host/turn-fold.ts`) | 宿主路由与 `scripts/verify-balance.mjs` 共用同一份实现,独立复算才有意义(实现分叉就不是独立验证了) |
+| 宿主路由带 **TTL 缓存 + 并发去重 + 会话上限** | 每次请求都读全部日志太贵;缓存 20s、并发共享一次构建、只读最近 120 个非空会话,兼顾新鲜度与开销 |
 | 导航文案用 **label thunk** + 监听 `locale/change` | 契约规定 label 由注册方本地化、shell 每次渲染重新求值;这样语言切换不需要重新注册,插件也不用订阅 locale 状态 |
-| 没有设置项(v1/v2) | 价目表随代码走,升级即更新;少一层状态持久化 |
+| 没有设置项(v1–v3) | 价目表随代码走,升级即更新;少一层状态持久化 |
 
-## 5. DSH 升级时检查这 6 处
+## 5. DSH 升级时检查这 9 处
+
+聊天侧(浏览器):
 
 1. `packages/client/web/src/platform.ts` 的 `PLATFORM_MODULES` —— 与 `tsdown.config.ts` 里的同名常量保持一致;
 2. `ui-chat` 的 `SlotMap` 中 `conversation.chat.assistant-actions` 是否仍为 list/session/`{messageId}`;
 3. `TurnTailChatData.tokenUsage`(`TurnTokenUsage` 的分档字段与 `routes`);
 4. `TurnTailChatData.closing.finalNode.messageId`(选择器的匹配键);
-5. `ui-settings` 的 `SlotMap` 中 `settings.section` 是否仍为 list/`root`,以及 register 选项里的 `label`(可为 thunk)语义;
-6. 会话列表行(`SessionSummary`)是否仍带 `projectionValues`(`tokenUsage` / `modelSelection`)、`updatedAt`、`origin`。
+5. `ui-settings` 的 `SlotMap` 中 `settings.section` 是否仍为 list/`root`,以及 register 选项里的 `label`(可为 thunk)语义。
 
-前 4 处任一变化,`pnpm run smoke` 会先失败(它断言注册 id、插件形状、两个插槽名与真实算价);第 5、6 处会先由 `tsc` 报错(镜像类型),再在界面上退化为"空表 + 未纳入计数"。
+宿主侧(统计页数据):
+
+6. `ctx.sessionPersistence` 的 `list()` / `open(id, access)` / `handle.read()` 是否仍存在且返回 `{ events }`
+   (`packages/session/session-persistence/src/index.ts`、`handle.ts`);
+7. `ctx.webServer.register({ kind, path, handler })` 的签名与 `req`/`res` 形态(`packages/host/webserver`);
+8. 会话头字段 `id` / `createdAt` / `cwd` / `delegationDepth`(`packages/session/session-format/src/types.ts`);
+9. 持久化事件形状:`turn/start|end.data.turn`、`assistant/message.data.usage`、
+   `assistant/message.data.message.source.provider|model`、`model/selection.data.provider|model`、`session/title.data.title`。
+
+前 5 处任一变化,`pnpm run smoke` 会先失败(它断言注册 id、插件形状、两个插槽名与真实算价);
+第 6–9 处会先由 `tsc` 报错(镜像类型),再在真机上表现为统计页报错或行数变少 —— 用 `pnpm run verify:balance` 可直接定位到折叠层。
 
 ## 6. 测试策略
 
 | 层 | 工具 | 覆盖 |
 |---|---|---|
 | 计费纯函数 | `vitest`(`tests/pricing.spec.ts`) | 别名/改路规则、高峰窗口边界(含 12:00、周末、跨时区)、三档金额、混用模型、无路由不猜 |
-| 会话聚合 | `vitest`(`tests/session-costs.spec.ts`) | 日/月键与分桶、按桶筛选、合计、子代理标记、无价目会话、`lastUsed→next` 回退、无投影会话计入 skipped |
-| 产物契约 | `node scripts/smoke-client-bundle.mjs` | bundle 注册 id = 包名、工厂返回 `inject`/`apply`、两个插槽各注册一项、导航 label 非空、**两个条目的渲染抛错都被隔离成 null**、胶囊与统计页对真实分档算出正确金额、无路由不渲染 |
-| 真机 | 手动 | 重启 `dsh web` + 硬刷新:核对胶囊与原生用量弹窗的分档一致性、统计页的合计与余额 `$` 变化对照 |
+| 日志折叠 | `vitest`(`tests/turn-fold.spec.ts`) | 头部/标题、回合窗口、多尝试累加、`message.source` 优先与 `model/selection` 回退、非法用量整条丢弃、无人认领的 usage、`assistant/attempt` 重试、未知事件容错 |
+| 统计模型 | `vitest`(`tests/stats-model.spec.ts`) | 日/月键与分桶、按桶筛选、合计(回复数/会话数/子代理/未计价/金额/用量)、空选择返回 0 |
+| 产物契约 | `node scripts/smoke-client-bundle.mjs` | bundle 注册 id = 包名、工厂返回 `inject`/`apply`、两个插槽各注册一项、导航 label 非空、**两个条目的渲染抛错都被隔离成 null**、胶囊对真实分档算出 `≈¥5`、无路由不渲染、统计页发起宿主请求 |
+| 独立复算 | `node scripts/verify-balance.mjs` | 绕过宿主直读日志复算全部会话累计,并与 API 余额的差值对账(2026-09-11 实测 Δ$0.249 vs 余额 Δ$0.25) |
+| 真机 | 手动 | 重启 `dsh web` + 硬刷新:核对胶囊与原生用量弹窗的分档一致性、统计页逐条明细与合计 |

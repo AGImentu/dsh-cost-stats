@@ -1,7 +1,7 @@
 {
   "name": "dsh-session-cost",
-  "version": "0.2.0",
-  "description": "DSH Web plugin: per-turn cost beside the native turn-usage pill, plus a Cost-stats settings page with day/month queries. Official DeepSeek price tables (CNY + USD), peak/off-peak aware.",
+  "version": "0.3.0",
+  "description": "DSH Web plugin: per-turn cost beside the native turn-usage pill, plus a per-reply Cost-stats settings page (day/month queries) fed by a host route that folds every stored session log. Official DeepSeek price tables (CNY + USD), peak/off-peak aware.",
   "type": "module",
   "license": "MIT",
   "keywords": [
@@ -54,6 +54,7 @@
     "test": "vitest run",
     "smoke": "node scripts/smoke-client-bundle.mjs",
     "verify": "pnpm run typecheck && pnpm run test && pnpm run build && pnpm run smoke",
+    "verify:balance": "node scripts/verify-balance.mjs",
     "install:profile": "node scripts/install-local.mjs"
   },
   "devDependencies": {

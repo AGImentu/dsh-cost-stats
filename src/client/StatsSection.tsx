@@ -4,31 +4,27 @@
  * Registered into `settings.section` (a ROOT-scope list slot): DSH's settings
  * shell puts one nav cell per entry and renders the entry inside its content
  * column, so this file owns the whole page — heading, query switch, total card,
- * tables and notes — and contributes no chrome back to the shell.
+ * tables and states — and contributes no chrome back to the shell.
  *
- * Data comes from the session list's projection values (see `session-costs.ts`),
- * which is what lets the page cover every session the object layer knows about
- * without activating any of them. Every number here is an estimate from the
- * official price table; the page says so where it matters.
+ * Data comes from the plugin's own host route (`GET /session-cost/usage`), which
+ * folds every stored session log into per-reply priced rows. The page itself
+ * only groups and totals those rows, so day/month queries are exact arithmetic
+ * over the same numbers the host billed.
  *
  * @module dsh-session-cost/client/StatsSection
  */
 
-import { useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { formatMoney } from '../pricing.ts'
+import { USAGE_ROUTE } from '../routes.ts'
+import type { TurnCostRow, UsagePayload } from '../rows.ts'
 import type { CostStatsProps, Translator } from './contract.ts'
 import { fallbackTranslator } from './locales.ts'
 import { CLASS } from './styles.ts'
-import {
-  bucketRows, filterRows, scanSessions, totalsOf,
-  type BucketMode, type SessionCostRow, type StatsMode,
-} from './session-costs.ts'
+import { bucketRows, filterRows, totalsOf, type BucketMode, type StatsMode } from './stats-model.ts'
 
-/** Newest session rows rendered at once; the buckets above stay complete. */
-const ROW_LIMIT = 200
-
-/** Empty session list used until the standard seat hands one down. */
-const NO_SESSIONS = { ids: [] as readonly string[], byId: {} as Readonly<Record<string, undefined>> }
+/** Replies rendered at once; the buckets above always cover every row. */
+const ROW_LIMIT = 300
 
 /**
  * Compact token label (1.2M / 345.0K / 812).
@@ -56,40 +52,59 @@ function formatStamp(at: number, now: number): string {
 }
 
 /** Mode switch labels, in tab order. */
-const MODES: readonly StatsMode[] = ['day', 'month', 'sessions']
+const MODES: readonly StatsMode[] = ['day', 'month', 'turns']
 
 /**
  * The statistics page.
- * @param props - session-list hook and locale translator from the slot seats.
+ * @param props - locale translator from the slot seat.
  * @returns the page.
  */
-export function CostStatsSection({ useSessions, t }: CostStatsProps): ReactNode {
+export function CostStatsSection({ t }: CostStatsProps): ReactNode {
   const tr = t ?? fallbackTranslator
-  const select = useSessions
-  const ids = select?.(state => state.ids)
-  const byId = select?.(state => state.byId)
+  const [payload, setPayload] = useState<UsagePayload | undefined>(undefined)
+  const [error, setError] = useState<string | undefined>(undefined)
+  const [loading, setLoading] = useState(true)
   const [mode, setMode] = useState<StatsMode>('day')
   const [bucket, setBucket] = useState<string | undefined>(undefined)
 
-  const scan = useMemo(
-    () => scanSessions(ids === undefined || byId === undefined ? NO_SESSIONS : { ids, byId }),
-    [ids, byId],
-  )
-  const grouping: BucketMode | undefined = mode === 'sessions' ? undefined : mode
+  /**
+   * Load the payload from the host route.
+   * @param force - bypass the host's own payload cache.
+   */
+  const load = useCallback((force = false): void => {
+    setLoading(true)
+    setError(undefined)
+    const url = force ? `${USAGE_ROUTE}?refresh=1` : USAGE_ROUTE
+    void fetch(url, { credentials: 'same-origin', headers: { accept: 'application/json' } })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`${String(response.status)} ${response.statusText}`)
+        return await response.json() as UsagePayload
+      })
+      .then((next) => { setPayload(next); setLoading(false) })
+      .catch((cause: unknown) => {
+        setError(cause instanceof Error ? cause.message : String(cause))
+        setLoading(false)
+      })
+  }, [])
+
+  useEffect(() => { load(false) }, [load])
+
+  const rows = payload?.rows ?? []
+  const grouping: BucketMode | undefined = mode === 'turns' ? undefined : mode
   const buckets = useMemo(
-    () => (grouping === undefined ? [] : bucketRows(scan.rows, grouping)),
-    [scan.rows, grouping],
+    () => (grouping === undefined ? [] : bucketRows(rows, grouping)),
+    [rows, grouping],
   )
   const selected = useMemo(
-    () => (grouping === undefined ? scan.rows : filterRows(scan.rows, grouping, bucket)),
-    [scan.rows, grouping, bucket],
+    () => (grouping === undefined ? rows : filterRows(rows, grouping, bucket)),
+    [rows, grouping, bucket],
   )
   const totals = useMemo(() => totalsOf(selected), [selected])
   const visible = selected.slice(0, ROW_LIMIT)
   const now = Date.now()
 
   const modeLabel = (value: StatsMode): string => tr(
-    value === 'day' ? 'stats.mode.day' : value === 'month' ? 'stats.mode.month' : 'stats.mode.sessions',
+    value === 'day' ? 'stats.mode.day' : value === 'month' ? 'stats.mode.month' : 'stats.mode.turns',
   )
 
   return (
@@ -116,6 +131,9 @@ export function CostStatsSection({ useSessions, t }: CostStatsProps): ReactNode 
             {tr('stats.clearSelection')}
           </button>
         )}
+        <button type="button" className={CLASS.tab} onClick={() => { load(true) }}>
+          {tr('stats.refresh')}
+        </button>
       </div>
 
       <div className={CLASS.statsTotal}>
@@ -128,6 +146,7 @@ export function CostStatsSection({ useSessions, t }: CostStatsProps): ReactNode 
           <span className={CLASS.moneySub}>{formatMoney(totals.usd, 'USD')}</span>
         </div>
         <div className={CLASS.statsMetrics}>
+          <span className={CLASS.metric}>{tr('stats.metric.replies')} {totals.replies}</span>
           <span className={CLASS.metric}>{tr('stats.metric.sessions')} {totals.sessions}</span>
           <span className={CLASS.metric}>{tr('stats.metric.tokens')} {formatTokens(totals.tokens)}</span>
           {totals.subagents > 0 && (
@@ -139,20 +158,30 @@ export function CostStatsSection({ useSessions, t }: CostStatsProps): ReactNode 
         </div>
       </div>
 
-      {scan.rows.length === 0 ? (
+      {error !== undefined && (
         <div className={CLASS.empty}>
-          {tr('stats.empty')}
+          {tr('stats.error')}
           <br />
-          {tr('stats.emptyHint')}
+          <span className={CLASS.moneySub}>{error}</span>
         </div>
-      ) : (
+      )}
+
+      {error === undefined && loading && rows.length === 0 && (
+        <div className={CLASS.empty}>{tr('stats.loading')}</div>
+      )}
+
+      {error === undefined && !loading && rows.length === 0 && (
+        <div className={CLASS.empty}>{tr('stats.empty')}</div>
+      )}
+
+      {rows.length > 0 && (
         <>
           {grouping !== undefined && buckets.length > 0 && (
             <table className={CLASS.table}>
               <thead>
                 <tr>
                   <th>{tr(grouping === 'day' ? 'stats.col.day' : 'stats.col.month')}</th>
-                  <th className={CLASS.num}>{tr('stats.col.count')}</th>
+                  <th className={CLASS.num}>{tr('stats.col.replies')}</th>
                   <th className={CLASS.num}>{tr('stats.col.tokens')}</th>
                   <th className={CLASS.num}>{tr('stats.col.cost')}</th>
                 </tr>
@@ -165,7 +194,7 @@ export function CostStatsSection({ useSessions, t }: CostStatsProps): ReactNode 
                     onClick={() => { setBucket(row.key === bucket ? undefined : row.key) }}
                   >
                     <td>{grouping === 'day' ? row.key.slice(5) : row.key}</td>
-                    <td className={CLASS.num}>{row.sessions}</td>
+                    <td className={CLASS.num}>{row.replies}</td>
                     <td className={CLASS.num}>{formatTokens(row.tokens)}</td>
                     <td className={CLASS.num}>
                       {formatMoney(row.cny, 'CNY')}
@@ -188,41 +217,29 @@ export function CostStatsSection({ useSessions, t }: CostStatsProps): ReactNode 
             </thead>
             <tbody>
               {visible.map(row => (
-                <SessionRow key={row.id} row={row} tr={tr} now={now} />
+                <ReplyRow key={`${row.sessionId}:${String(row.turn)}`} row={row} tr={tr} now={now} />
               ))}
             </tbody>
           </table>
-
-          {selected.length > ROW_LIMIT && (
-            <div className={CLASS.statsNote}>
-              <span>{tr('stats.note.limit', { count: ROW_LIMIT })}</span>
-            </div>
-          )}
         </>
       )}
-
-      <div className={CLASS.statsNote}>
-        <span>{tr('stats.note.scope')}</span>
-        <span>{tr('stats.note.subagent')}</span>
-        {scan.skipped > 0 && <span>{tr('stats.skipped', { count: scan.skipped })}</span>}
-      </div>
     </div>
   )
 }
 
 /**
- * One session row: stamp, title with tags, tokens, money.
+ * One reply row: stamp, session name with tags, tokens, money.
  * @param props - the priced row, translator, and the reference instant.
  * @returns the table row.
  */
-function SessionRow({ row, tr, now }: { row: SessionCostRow, tr: Translator, now: number }): ReactNode {
+function ReplyRow({ row, tr, now }: { row: TurnCostRow, tr: Translator, now: number }): ReactNode {
+  const label = `${row.sessionTitle} · #${String(row.turn)}${row.model === undefined ? '' : ` · ${row.model}`}`
   return (
     <tr>
       <td className={CLASS.num}>{formatStamp(row.at, now)}</td>
-      <td className={CLASS.session} title={row.title}>
-        {row.title}
+      <td className={CLASS.session} title={label}>
+        {row.sessionTitle}
         {row.subagent && <span className={CLASS.badge}>{tr('stats.tag.subagent')}</span>}
-        {row.running && <span className={CLASS.badge}>{tr('stats.tag.running')}</span>}
         {!row.priced && <span className={CLASS.badge}>{tr('stats.tag.unpriced')}</span>}
       </td>
       <td className={CLASS.num}>{formatTokens(row.tokens)}</td>

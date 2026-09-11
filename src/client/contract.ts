@@ -170,60 +170,14 @@ export interface ClientContextLike {
   on?(event: string, listener: (payload: never) => void): void
 }
 
-/** Token buckets as the host's cumulative `tokenUsage` projection reports them. */
-export interface TokenUsageProjectionLike {
-  readonly uncachedInputTokens?: number
-  readonly outputTokens?: number
-  readonly cacheReadTokens?: number
-  readonly cacheWriteTokens?: number
-}
-
-/** Durable model selection as the host's `modelSelection` projection reports it. */
-export interface ModelSelectionProjectionLike {
-  /** Selection consumed by the latest recorded model request. */
-  readonly lastUsed?: { readonly provider: string; readonly model: string } | null
-  /** Selection the next request should use. */
-  readonly next?: { readonly provider: string; readonly model: string } | null
-}
-
-/** The projection slice this plugin reads off one session-list row. */
-export interface SessionProjectionValuesLike {
-  readonly tokenUsage?: TokenUsageProjectionLike
-  readonly modelSelection?: ModelSelectionProjectionLike
-}
-
 /**
- * One row of the client session list (`SessionSummary`), narrowed to the fields
- * the stats page reads. `projectionValues` are the host-computed values the
- * object layer retains, which is what lets the page summarize a cold session
- * without activating it.
+ * Props of the settings section entry (`settings.section`, root scope).
+ *
+ * The page needs no standard data seat: it reads its numbers from the plugin's
+ * own host route (the durable logs live there), so the owner props the shell
+ * passes are ignored and only the locale seat is used.
  */
-export interface SessionSummaryLike {
-  readonly id: string
-  readonly title?: string
-  readonly displayTitle?: string
-  /** `'subagent'` marks a session spawned by a subagent rather than a human chat. */
-  readonly origin?: string
-  readonly running?: boolean
-  readonly blank?: boolean
-  /** Epoch ms of the last durable activity. */
-  readonly updatedAt?: number
-  readonly projectionValues?: SessionProjectionValuesLike
-}
-
-/** Snapshot of `useSessions` (list plus current selection). */
-export interface SessionListStateLike {
-  readonly ids: readonly string[]
-  readonly byId: Readonly<Record<string, SessionSummaryLike | undefined>>
-}
-
-/** Selector hook over the client session list (a ROOT-scope standard seat). */
-export type UseSessionsLike = <T>(selector: (state: SessionListStateLike) => T) => T
-
-/** Props of the settings section entry (`settings.section`, root scope). */
 export interface CostStatsProps {
-  /** Session-list selector hook from the framework standard kit. */
-  readonly useSessions?: UseSessionsLike
   /** Locale translator for this plugin's namespace. */
   readonly t?: Translator
 }
