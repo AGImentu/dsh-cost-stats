@@ -254,4 +254,20 @@ describe('seeded (forked) logs', () => {
     expect(session.delegationDepth).toBe(2)
     expect(session.turns).toHaveLength(2)
   })
+
+  it('honours the persistence handle cut when no header event is present', () => {
+    // This is the host route's shape: handle.read() returns event rows WITHOUT
+    // the physical header record, so `isSeeded` appears nowhere in the input.
+    const session = foldSessionEvents('child', seededLog().slice(1), { inheritedEventCount: 6 })
+    expect(session.isSeeded).toBe(true)
+    expect(session.inheritedEvents).toBe(6)
+    expect(session.turns.map(turn => turn.turn)).toEqual([7])
+  })
+
+  it('prices the whole log when the handle reports no inherited prefix', () => {
+    const session = foldSessionEvents('child', seededLog().slice(1), { inheritedEventCount: 0 })
+    expect(session.isSeeded).toBe(false)
+    expect(session.inheritedEvents).toBe(0)
+    expect(session.turns.map(turn => turn.turn)).toEqual([1, 7])
+  })
 })

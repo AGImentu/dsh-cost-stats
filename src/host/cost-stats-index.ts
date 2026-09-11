@@ -204,10 +204,14 @@ export class CostStatsIndex {
     for (const snapshot of candidates) {
       try {
         const session = await this.readSession(snapshot.header.id)
+        // Header fields come from the snapshot, not from the folded events: the
+        // persistence layer returns event rows without the physical header
+        // record, so `session.cwd` / `session.delegationDepth` are usually
+        // absent here while the snapshot always carries them.
         const title = session.title
-          ?? baseName(session.cwd)
+          ?? baseName(snapshot.header.cwd ?? session.cwd)
           ?? `session ${session.id.slice(0, 8)}`
-        const subagent = session.delegationDepth > 0
+        const subagent = (snapshot.header.delegationDepth ?? session.delegationDepth) > 0
         let priced = 0
         for (const turn of session.turns) {
           if (turn.attempts === 0) continue
@@ -231,12 +235,21 @@ export class CostStatsIndex {
     return { generatedAt: this.now(), stored: stored.length, read: candidates.length, skipped, rows }
   }
 
-  /** Open, read, and fold one stored session. */
+  /**
+   * Open, read, and fold one stored session.
+   *
+   * The handle's `inheritedEventCount` is handed to the fold because the read
+   * output carries no `session` header event: without it a fork's inherited
+   * prefix would be priced as if the child had produced it (the parent's own log
+   * bills those turns), which showed up as the same reply listed three times.
+   */
   private async readSession(id: string) {
     const handle = await this.ctx.sessionPersistence.open(id, 'read')
     try {
       const { events } = await handle.read()
-      return foldSessionEvents(id, events as readonly DurableEventLike[])
+      return foldSessionEvents(id, events as readonly DurableEventLike[], {
+        inheritedEventCount: handle.inheritedEventCount,
+      })
     } finally {
       await handle.close().catch(() => {})
     }

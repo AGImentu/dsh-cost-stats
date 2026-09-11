@@ -285,11 +285,12 @@ node scripts/verify-balance.mjs 2026-09-11T11:07 2026-09-11T12:20
 ```sh
 pnpm install
 pnpm run typecheck   # tsc --noEmit
-pnpm test            # 56 项单测:计费/时段/别名规则 + 日志折叠(含压缩) + 日历 + 逐条统计与分页 + 兜底缓存(vitest)
+pnpm test            # 63 项单测:计费/时段/别名规则 + 日志折叠(含压缩与分叉继承段) + 日历 + 统计与分页 + 兜底缓存
 pnpm run build       # lib/index.js(host 半边:路由 + 日志折叠) + lib/client.js(浏览器半边)
 pnpm run smoke       # 产物契约冒烟:在 Node 里跑 client.js,验证注册 id / 插件形状 / 两个插槽 / 真实算价 / 抛错隔离 / 宿主请求
 pnpm run verify      # typecheck + test + build + smoke
 pnpm run verify:balance   # 独立复算全部会话累计 ← 与 API 余额对账用
+pnpm run verify:paths     # 两种折叠入口(有头部 / 无头部+切点)逐条比对 ← 防止「离线验证通过、真机重复计费」
 pnpm run watch       # 开发时增量重建(配合 dsh 的 client HMR;host 改动仍需重启)
 ```
 
@@ -330,6 +331,7 @@ scripts/
   install-local.mjs       本地 link 安装 + bundles 对账
   smoke-client-bundle.mjs 产物契约冒烟(无浏览器)
   verify-balance.mjs      独立复算(绕过宿主直读会话日志)← 余额对账
+  verify-fold-paths.mjs   双入口一致性检查(有头部 / 无头部+切点)← 防「离线通过、真机重复计费」
 docs/architecture.md      接入契约与设计取舍
 docs/images/              README 里那两张效果截图(胶囊 / 统计页)
 ```

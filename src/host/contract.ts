@@ -8,11 +8,13 @@
  * host. Every field is read defensively at runtime.
  *
  * Pinned against DSH 0.1.5-rc.2:
- * - `ctx.sessionPersistence` — `list()` / `open(id, 'read')` / `handle.read()`
+ * - `ctx.sessionPersistence` — `list()` / `open(id, 'read')` / `handle.read()` /
+ *   `handle.inheritedEventCount`
  *   (`packages/session/session-persistence/src/index.ts`, `handle.ts`);
  * - `ctx.webServer.register({ kind, path, handler })` — Node `req`/`res` handler,
  *   returning its disposer (`packages/host/webserver`);
- * - the durable `session` header (id / createdAt / cwd / delegationDepth).
+ * - the durable `session` header (id / createdAt / cwd / delegationDepth), with
+ *   `isSeeded` + the fork cut (`inheritedEventCount`) for seeded sessions.
  *
  * @module dsh-cost-stats/host/contract
  */
@@ -25,6 +27,9 @@ export interface SessionHeaderLike {
   /** Continuation depth: `0` for a human chat, `> 0` for a subagent session. */
   readonly delegationDepth?: number
   readonly agentPreset?: string
+  /** `true` when this session's log begins with a copy of its parent's events. */
+  readonly isSeeded?: boolean
+  readonly parentSession?: string
 }
 
 /** Per-session observation returned by `sessionPersistence.list()`. */
@@ -36,6 +41,15 @@ export interface SessionSnapshotLike {
 
 /** `sessionPersistence.open(id, access)` result, narrowed to the read path. */
 export interface SessionHandleLike {
+  /**
+   * How many leading events this log inherited from its parent.
+   *
+   * The persistence layer separates the physical header record from the event
+   * rows, so a handle's `read()` output carries NO `session` header event: this
+   * property is the only way a reader of `read()` output can learn where the
+   * fork's inherited prefix ends. `0` for a session that was not seeded.
+   */
+  readonly inheritedEventCount?: number
   /**
    * Read a slice of the valid contiguous log.
    * @param offset - first logical seq; defaults to 0.

@@ -83,6 +83,19 @@ export interface FoldedCompaction {
   readonly reasoningTokens: number
 }
 
+/** Inputs the fold cannot read from the events alone. */
+export interface FoldOptions {
+  /**
+   * Exact number of leading events inherited from the parent session.
+   *
+   * Supplied by the host route from `handle.inheritedEventCount`: the
+   * persistence layer hands out event rows without the physical header record,
+   * so a seeded session's own events arrive with no `isSeeded` to read.
+   * Omitted by callers that parse raw log lines and still see the header.
+   */
+  readonly inheritedEventCount?: number
+}
+
 /** One folded session. */
 export interface FoldedSession {
   readonly id: string
@@ -210,11 +223,13 @@ function inheritedBoundary(events: readonly DurableEventLike[]): number | undefi
  * so counting it here would bill the same tokens twice.
  * @param sessionId - fallback id when the header is missing.
  * @param events - the durable events, in seq order.
+ * @param options - the caller's fork cut, when it has one.
  * @returns the session with its billable turns and compactions.
  */
 export function foldSessionEvents(
   sessionId: string,
   events: readonly DurableEventLike[],
+  options: FoldOptions = {},
 ): FoldedSession {
   let id = sessionId
   let title: string | undefined
@@ -240,10 +255,18 @@ export function foldSessionEvents(
     isSeeded = header.isSeeded === true
     break
   }
-  // A seeded log whose seam cannot be located is not folded at all: its head is
-  // somebody else's history, and a wrong total is worse than a missing one (the
-  // parent session's own log carries those turns).
-  const boundary = isSeeded ? inheritedBoundary(events) : undefined
+  // Two callers, two sources for the cut. A caller whose events came from the
+  // persistence handle passes the handle's own number, because that layer strips
+  // the physical header record and with it `isSeeded`; a caller reading raw log
+  // lines (the verification script) leaves the header visible and gets the seam
+  // parsed from the inherited-end-seed markers instead.
+  const handleCut = options.inheritedEventCount
+  const cut = isCount(handleCut)
+    ? handleCut
+    : isSeeded
+      ? inheritedBoundary(events)
+      : 0
+  const seeded = isSeeded || (isCount(cut) && cut > 0)
   let inheritedEvents = 0
 
   const accumulatorFor = (turn: number, at: number): TurnAccumulator => {
@@ -263,13 +286,20 @@ export function foldSessionEvents(
     return created
   }
 
+  let index = 0
   for (const event of events) {
     if (event.type === 'session') continue
-    if (isSeeded) {
-      // Inherited when the event predates the seam; DSH gives no seq to the
-      // header event, so a boundary of -1 (no seam found) skips everything.
-      const seq = isCount(event.seq) ? event.seq : Number.POSITIVE_INFINITY
-      if (boundary === undefined || seq <= boundary) {
+    const position = index
+    index += 1
+    if (seeded) {
+      // The handle's cut counts EVENTS (the persistence layer slices its own
+      // array by it), while a raw-line caller's seam is a seq. Both identify the
+      // same prefix, so each source gets the comparison it is defined in.
+      let inherited: boolean
+      if (isCount(handleCut)) inherited = position < handleCut
+      else if (cut === undefined) inherited = true
+      else inherited = !isCount(event.seq) || event.seq <= cut
+      if (inherited) {
         inheritedEvents += 1
         continue
       }
@@ -374,7 +404,7 @@ export function foldSessionEvents(
     delegationDepth,
     turns: folded,
     compactions,
-    isSeeded,
+    isSeeded: seeded,
     inheritedEvents,
   }
 }
