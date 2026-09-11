@@ -28,7 +28,7 @@ import { dayKeyOf, monthKeyOf, paginate, totalsOf } from './stats-model.ts'
 import { CLASS } from './styles.ts'
 
 /** Replies shown per page; the pickers and the total still cover every row. */
-const PAGE_SIZE = 20
+const PAGE_SIZE = 15
 
 /**
  * Compact token label (1.2M / 345.0K / 812).
@@ -162,10 +162,12 @@ export function CostStatsSection({ t }: CostStatsProps): ReactNode {
       </div>
 
       <div className={CLASS.statsTotal}>
-        <div>
+        <div className={CLASS.statsTotalMain}>
           <div className={CLASS.statsSubtitle}>{`${tr('stats.total')} · ${scope}`}</div>
-          <div className={CLASS.statsTotalValue}>{formatMoney(totals.cny, 'CNY')}</div>
-          <span className={CLASS.moneySub}>{formatMoney(totals.usd, 'USD')}</span>
+          <div className={CLASS.statsTotalValue}>
+            {formatMoney(totals.cny, 'CNY')}
+            <span className={CLASS.moneyInline}>{formatMoney(totals.usd, 'USD')}</span>
+          </div>
         </div>
         <div className={CLASS.statsMetrics}>
           <span className={CLASS.metric}>{tr('stats.metric.replies')} {totals.replies}</span>

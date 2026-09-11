@@ -53,6 +53,7 @@ export const CLASS = {
   calWeekday: 'dsh-session-cost__calWeekday',
   calCell: 'dsh-session-cost__calCell',
   statsTotal: 'dsh-session-cost__statsTotal',
+  statsTotalMain: 'dsh-session-cost__statsTotalMain',
   statsTotalValue: 'dsh-session-cost__statsTotalValue',
   statsMetrics: 'dsh-session-cost__statsMetrics',
   metric: 'dsh-session-cost__metric',
@@ -455,7 +456,9 @@ export const STYLES = `
 /* Total card: the query's headline number. */
 .${CLASS.statsTotal} {
   display: flex;
-  align-items: flex-end;
+  /* Centred, not bottom-aligned: the metrics line is one row of small text and
+     used to hang off the bottom edge, level with the second money line. */
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
   padding: 14px 16px;
@@ -464,12 +467,26 @@ export const STYLES = `
   background: var(--dsw-alias-bg-layer-1);
 }
 
+.${CLASS.statsTotalMain} {
+  min-width: 0;
+}
+
 .${CLASS.statsTotalValue} {
+  /* CNY leads, USD sits on the same baseline beside it — never a second line. */
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
   color: var(--dsw-alias-label-primary);
   font-size: 22px;
   line-height: 28px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+}
+
+.${CLASS.statsTotalValue} .${CLASS.moneyInline} {
+  margin-left: 0;
+  font-size: 13px;
+  font-weight: 500;
 }
 
 .${CLASS.statsMetrics} {
