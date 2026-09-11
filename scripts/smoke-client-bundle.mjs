@@ -244,11 +244,11 @@ const unpricedChip = renderTree(chipEntry.component({
 }))
 check('chip renders nothing without route attribution', unpricedChip === null)
 
-// 6. Stats page: renders its query switch and asks the host for its payload.
+// 6. Stats page: renders the calendar pickers and asks the host for its payload.
 const statsText = collectText(renderTree(statsEntry.component({ t: undefined }))).join(' ')
 check(`stats page renders its heading (got "${statsText.slice(0, 40)}")`, statsText.includes('费用统计'))
-check('stats page offers day, month and all-replies queries',
-  statsText.includes('按日') && statsText.includes('按月') && statsText.includes('全部回复'))
+check('stats page offers a day picker and a month picker',
+  statsText.includes('选择日期') && statsText.includes('选择月份'))
 check(`stats page fetches the plugin host route (got ${JSON.stringify(fetched)})`,
   fetched.includes('/session-cost/usage'))
 

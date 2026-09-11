@@ -3,13 +3,16 @@
  *
  * Registered into `settings.section` (a ROOT-scope list slot): DSH's settings
  * shell puts one nav cell per entry and renders the entry inside its content
- * column, so this file owns the whole page — heading, query switch, total card,
- * tables and states — and contributes no chrome back to the shell.
+ * column, so this file owns the whole page.
+ *
+ * The page is deliberately one list: every assistant reply with its time,
+ * session, tokens and cost. Date and month are chosen through calendar pickers
+ * (`Pickers.tsx`) rather than tabs, and the single total card follows whatever is
+ * selected — there is no second, aggregate table to drift out of sync with the
+ * rows below it.
  *
  * Data comes from the plugin's own host route (`GET /session-cost/usage`), which
- * folds every stored session log into per-reply priced rows. The page itself
- * only groups and totals those rows, so day/month queries are exact arithmetic
- * over the same numbers the host billed.
+ * folds every stored session log into per-reply priced rows.
  *
  * @module dsh-session-cost/client/StatsSection
  */
@@ -20,10 +23,11 @@ import { USAGE_ROUTE } from '../routes.ts'
 import type { TurnCostRow, UsagePayload } from '../rows.ts'
 import type { CostStatsProps, Translator } from './contract.ts'
 import { fallbackTranslator } from './locales.ts'
+import { DayPicker, MonthPicker } from './Pickers.tsx'
+import { dayKeyOf, monthKeyOf, totalsOf } from './stats-model.ts'
 import { CLASS } from './styles.ts'
-import { bucketRows, filterRows, totalsOf, type BucketMode, type StatsMode } from './stats-model.ts'
 
-/** Replies rendered at once; the buckets above always cover every row. */
+/** Replies rendered at once; the pickers and total still cover every row. */
 const ROW_LIMIT = 300
 
 /**
@@ -51,9 +55,6 @@ function formatStamp(at: number, now: number): string {
   return `${sameYear ? day : `${date.getFullYear()}-${day}`} ${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
-/** Mode switch labels, in tab order. */
-const MODES: readonly StatsMode[] = ['day', 'month', 'turns']
-
 /**
  * The statistics page.
  * @param props - locale translator from the slot seat.
@@ -64,8 +65,10 @@ export function CostStatsSection({ t }: CostStatsProps): ReactNode {
   const [payload, setPayload] = useState<UsagePayload | undefined>(undefined)
   const [error, setError] = useState<string | undefined>(undefined)
   const [loading, setLoading] = useState(true)
-  const [mode, setMode] = useState<StatsMode>('day')
-  const [bucket, setBucket] = useState<string | undefined>(undefined)
+  /** `YYYY-MM-DD` day filter; mutually exclusive with `month`. */
+  const [day, setDay] = useState<string | undefined>(undefined)
+  /** `YYYY-MM` month filter. */
+  const [month, setMonth] = useState<string | undefined>(undefined)
 
   /**
    * Load the payload from the host route.
@@ -90,22 +93,17 @@ export function CostStatsSection({ t }: CostStatsProps): ReactNode {
   useEffect(() => { load(false) }, [load])
 
   const rows = payload?.rows ?? []
-  const grouping: BucketMode | undefined = mode === 'turns' ? undefined : mode
-  const buckets = useMemo(
-    () => (grouping === undefined ? [] : bucketRows(rows, grouping)),
-    [rows, grouping],
-  )
-  const selected = useMemo(
-    () => (grouping === undefined ? rows : filterRows(rows, grouping, bucket)),
-    [rows, grouping, bucket],
-  )
+  const dataDays = useMemo(() => new Set(rows.map(row => dayKeyOf(row.at))), [rows])
+  const dataMonths = useMemo(() => new Set(rows.map(row => monthKeyOf(row.at))), [rows])
+  const selected = useMemo(() => {
+    if (day !== undefined) return rows.filter(row => dayKeyOf(row.at) === day)
+    if (month !== undefined) return rows.filter(row => monthKeyOf(row.at) === month)
+    return rows
+  }, [rows, day, month])
   const totals = useMemo(() => totalsOf(selected), [selected])
   const visible = selected.slice(0, ROW_LIMIT)
   const now = Date.now()
-
-  const modeLabel = (value: StatsMode): string => tr(
-    value === 'day' ? 'stats.mode.day' : value === 'month' ? 'stats.mode.month' : 'stats.mode.turns',
-  )
+  const scope = day ?? month ?? tr('stats.scope.all')
 
   return (
     <div className={CLASS.stats} data-session-cost-stats>
@@ -114,34 +112,36 @@ export function CostStatsSection({ t }: CostStatsProps): ReactNode {
         <div className={CLASS.statsSubtitle}>{tr('stats.subtitle')}</div>
       </div>
 
-      <div className={CLASS.tabs} role="group">
-        {MODES.map(value => (
+      <div className={CLASS.toolbar}>
+        <DayPicker
+          tr={tr}
+          value={day}
+          dataDays={dataDays}
+          onPick={(key) => { setDay(key); if (key !== undefined) setMonth(undefined) }}
+        />
+        <MonthPicker
+          tr={tr}
+          value={month}
+          dataMonths={dataMonths}
+          onPick={(key) => { setMonth(key); if (key !== undefined) setDay(undefined) }}
+        />
+        {(day !== undefined || month !== undefined) && (
           <button
-            key={value}
             type="button"
-            className={CLASS.tab}
-            aria-pressed={mode === value}
-            onClick={() => { setMode(value); setBucket(undefined) }}
+            className={CLASS.pickerAction}
+            onClick={() => { setDay(undefined); setMonth(undefined) }}
           >
-            {modeLabel(value)}
-          </button>
-        ))}
-        {bucket !== undefined && (
-          <button type="button" className={CLASS.tab} onClick={() => { setBucket(undefined) }}>
-            {tr('stats.clearSelection')}
+            {tr('stats.scope.clear')}
           </button>
         )}
-        <button type="button" className={CLASS.tab} onClick={() => { load(true) }}>
+        <button type="button" className={CLASS.pickerAction} onClick={() => { load(true) }}>
           {tr('stats.refresh')}
         </button>
       </div>
 
       <div className={CLASS.statsTotal}>
         <div>
-          <div className={CLASS.statsSubtitle}>
-            {tr('stats.total')}
-            {bucket === undefined ? '' : ` · ${tr('stats.selected', { bucket })}`}
-          </div>
+          <div className={CLASS.statsSubtitle}>{`${tr('stats.total')} · ${scope}`}</div>
           <div className={CLASS.statsTotalValue}>{formatMoney(totals.cny, 'CNY')}</div>
           <span className={CLASS.moneySub}>{formatMoney(totals.usd, 'USD')}</span>
         </div>
@@ -170,58 +170,26 @@ export function CostStatsSection({ t }: CostStatsProps): ReactNode {
         <div className={CLASS.empty}>{tr('stats.loading')}</div>
       )}
 
-      {error === undefined && !loading && rows.length === 0 && (
+      {error === undefined && !loading && selected.length === 0 && (
         <div className={CLASS.empty}>{tr('stats.empty')}</div>
       )}
 
-      {rows.length > 0 && (
-        <>
-          {grouping !== undefined && buckets.length > 0 && (
-            <table className={CLASS.table}>
-              <thead>
-                <tr>
-                  <th>{tr(grouping === 'day' ? 'stats.col.day' : 'stats.col.month')}</th>
-                  <th className={CLASS.num}>{tr('stats.col.replies')}</th>
-                  <th className={CLASS.num}>{tr('stats.col.tokens')}</th>
-                  <th className={CLASS.num}>{tr('stats.col.cost')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {buckets.map(row => (
-                  <tr
-                    key={row.key}
-                    className={row.key === bucket ? CLASS.selected : CLASS.selectable}
-                    onClick={() => { setBucket(row.key === bucket ? undefined : row.key) }}
-                  >
-                    <td>{grouping === 'day' ? row.key.slice(5) : row.key}</td>
-                    <td className={CLASS.num}>{row.replies}</td>
-                    <td className={CLASS.num}>{formatTokens(row.tokens)}</td>
-                    <td className={CLASS.num}>
-                      {formatMoney(row.cny, 'CNY')}
-                      <span className={CLASS.moneySub}>{formatMoney(row.usd, 'USD')}</span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-
-          <table className={CLASS.table}>
-            <thead>
-              <tr>
-                <th className={CLASS.num}>{tr('stats.col.time')}</th>
-                <th>{tr('stats.col.session')}</th>
-                <th className={CLASS.num}>{tr('stats.col.tokens')}</th>
-                <th className={CLASS.num}>{tr('stats.col.cost')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {visible.map(row => (
-                <ReplyRow key={`${row.sessionId}:${String(row.turn)}`} row={row} tr={tr} now={now} />
-              ))}
-            </tbody>
-          </table>
-        </>
+      {selected.length > 0 && (
+        <table className={CLASS.table}>
+          <thead>
+            <tr>
+              <th className={CLASS.num}>{tr('stats.col.time')}</th>
+              <th>{tr('stats.col.session')}</th>
+              <th className={CLASS.num}>{tr('stats.col.tokens')}</th>
+              <th className={CLASS.num}>{tr('stats.col.cost')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {visible.map(row => (
+              <ReplyRow key={`${row.sessionId}:${String(row.turn)}`} row={row} tr={tr} now={now} />
+            ))}
+          </tbody>
+        </table>
       )}
     </div>
   )

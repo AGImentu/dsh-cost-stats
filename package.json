@@ -1,7 +1,7 @@
 {
   "name": "dsh-session-cost",
-  "version": "0.3.0",
-  "description": "DSH Web plugin: per-turn cost beside the native turn-usage pill, plus a per-reply Cost-stats settings page (day/month queries) fed by a host route that folds every stored session log. Official DeepSeek price tables (CNY + USD), peak/off-peak aware.",
+  "version": "0.4.0",
+  "description": "DSH Web plugin: per-turn cost beside the native turn-usage pill, plus a per-reply Cost-stats settings page with calendar day/month pickers, fed by a host route that folds every stored session log. Official DeepSeek price tables (CNY + USD), peak/off-peak aware.",
   "type": "module",
   "license": "MIT",
   "keywords": [

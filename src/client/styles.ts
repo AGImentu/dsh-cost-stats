@@ -40,8 +40,18 @@ export const CLASS = {
   statsHead: 'dsh-session-cost__statsHead',
   statsTitle: 'dsh-session-cost__statsTitle',
   statsSubtitle: 'dsh-session-cost__statsSubtitle',
-  tabs: 'dsh-session-cost__tabs',
-  tab: 'dsh-session-cost__tab',
+  toolbar: 'dsh-session-cost__toolbar',
+  field: 'dsh-session-cost__field',
+  pickerPanel: 'dsh-session-cost__picker',
+  pickerHead: 'dsh-session-cost__pickerHead',
+  pickerTitle: 'dsh-session-cost__pickerTitle',
+  pickerNav: 'dsh-session-cost__pickerNav',
+  pickerFoot: 'dsh-session-cost__pickerFoot',
+  pickerAction: 'dsh-session-cost__pickerAction',
+  calGrid: 'dsh-session-cost__calGrid',
+  calMonths: 'dsh-session-cost__calMonths',
+  calWeekday: 'dsh-session-cost__calWeekday',
+  calCell: 'dsh-session-cost__calCell',
   statsTotal: 'dsh-session-cost__statsTotal',
   statsTotalValue: 'dsh-session-cost__statsTotalValue',
   statsMetrics: 'dsh-session-cost__statsMetrics',
@@ -51,8 +61,6 @@ export const CLASS = {
   session: 'dsh-session-cost__session',
   badge: 'dsh-session-cost__badge',
   moneySub: 'dsh-session-cost__moneySub',
-  selectable: 'dsh-session-cost__rowSelectable',
-  selected: 'dsh-session-cost__rowSelected',
   statsNote: 'dsh-session-cost__statsNote',
   empty: 'dsh-session-cost__empty',
 } as const
@@ -246,38 +254,197 @@ export const STYLES = `
   line-height: 18px;
 }
 
-/* Segmented mode switch: the settings panel's own chip geometry. */
-.${CLASS.tabs} {
-  display: inline-flex;
+/* Query toolbar: the two calendar fields plus text actions. */
+.${CLASS.toolbar} {
+  display: flex;
   align-items: center;
-  gap: 2px;
-  padding: 2px;
-  border-radius: 10px;
-  background: var(--dsw-alias-bg-layer-1);
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
-.${CLASS.tab} {
+/* A picker's trigger field. */
+.${CLASS.field} {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   height: 28px;
-  padding: 0 12px;
+  padding: 0 10px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-secondary);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.${CLASS.field}:hover {
+  border-color: var(--dsw-alias-border-l3);
+  color: var(--dsw-alias-label-primary);
+}
+
+.${CLASS.field}[data-active='true'] {
+  border-color: var(--dsw-alias-border-l3);
+  color: var(--dsw-alias-label-primary);
+  font-weight: 500;
+}
+
+.${CLASS.pickerAction} {
+  height: 28px;
+  padding: 0 8px;
   border: none;
   border-radius: 8px;
   background: transparent;
-  color: var(--dsw-alias-label-secondary);
+  color: var(--dsw-alias-label-tertiary);
   font-family: inherit;
   font-size: 13px;
   line-height: 20px;
   cursor: pointer;
 }
 
-.${CLASS.tab}:hover {
+.${CLASS.pickerAction}:hover {
   background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
 }
 
-.${CLASS.tab}[aria-pressed='true'] {
-  background: var(--dsw-alias-bg-layer-3);
+/* Calendar popover: the same menu skin as the chip's stat panel. */
+.${CLASS.pickerPanel} {
+  position: fixed;
+  z-index: 1100;
+  box-sizing: border-box;
+  padding: 10px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--dsw-specific-menu);
+  --dsw-elevation-stroke-color: var(--dsw-alias-border-l1);
+  box-shadow: var(--dsw-elevation-prominent);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.${CLASS.pickerHead} {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.${CLASS.pickerTitle} {
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.${CLASS.pickerNav} {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.${CLASS.pickerNav}:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.${CLASS.calGrid},
+.${CLASS.calMonths} {
+  display: grid;
+  gap: 2px;
+}
+
+.${CLASS.calGrid} {
+  grid-template-columns: repeat(7, 28px);
+}
+
+.${CLASS.calMonths} {
+  grid-template-columns: repeat(3, 56px);
+}
+
+.${CLASS.calWeekday} {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 20px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+}
+
+.${CLASS.calCell} {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-family: inherit;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.${CLASS.calCell}:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+/* Days outside the displayed month stay visible for layout stability. */
+.${CLASS.calCell}[data-outside='true'] {
+  color: var(--dsw-alias-label-tertiary);
+  opacity: 0.6;
+}
+
+/* Days that actually carry replies read as primary; a dot marks them. */
+.${CLASS.calCell}[data-has-data='true'] {
   color: var(--dsw-alias-label-primary);
   font-weight: 500;
+}
+
+.${CLASS.calCell}[data-has-data='true']::after {
+  content: '';
+  position: absolute;
+  margin-top: 18px;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.${CLASS.calCell}[data-today='true'] {
+  box-shadow: inset 0 0 0 0.5px var(--dsw-alias-border-l4);
+}
+
+.${CLASS.calCell}[data-selected='true'] {
+  background: var(--dsw-alias-bg-layer-3);
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+}
+
+.${CLASS.pickerFoot} {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
 }
 
 /* Total card: the query's headline number. */
@@ -386,19 +553,6 @@ export const STYLES = `
   font-size: 11px;
   line-height: 16px;
   vertical-align: 1px;
-}
-
-.${CLASS.selectable} {
-  cursor: pointer;
-}
-
-.${CLASS.selectable}:hover td {
-  background: var(--dsw-alias-interactive-bg-hover);
-}
-
-.${CLASS.selected} td {
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
 }
 
 .${CLASS.statsNote} {
