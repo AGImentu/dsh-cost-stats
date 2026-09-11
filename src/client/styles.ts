@@ -36,6 +36,25 @@ export const CLASS = {
   total: 'dsh-session-cost__total',
   note: 'dsh-session-cost__note',
   reasoning: 'dsh-session-cost__reasoning',
+  stats: 'dsh-session-cost__stats',
+  statsHead: 'dsh-session-cost__statsHead',
+  statsTitle: 'dsh-session-cost__statsTitle',
+  statsSubtitle: 'dsh-session-cost__statsSubtitle',
+  tabs: 'dsh-session-cost__tabs',
+  tab: 'dsh-session-cost__tab',
+  statsTotal: 'dsh-session-cost__statsTotal',
+  statsTotalValue: 'dsh-session-cost__statsTotalValue',
+  statsMetrics: 'dsh-session-cost__statsMetrics',
+  metric: 'dsh-session-cost__metric',
+  table: 'dsh-session-cost__table',
+  num: 'dsh-session-cost__num',
+  session: 'dsh-session-cost__session',
+  badge: 'dsh-session-cost__badge',
+  moneySub: 'dsh-session-cost__moneySub',
+  selectable: 'dsh-session-cost__rowSelectable',
+  selected: 'dsh-session-cost__rowSelected',
+  statsNote: 'dsh-session-cost__statsNote',
+  empty: 'dsh-session-cost__empty',
 } as const
 
 /** The stylesheet text injected once per plugin lifetime. */
@@ -194,6 +213,211 @@ export const STYLES = `
   margin-top: 10px;
   color: var(--dsw-alias-label-tertiary);
   line-height: 16px;
+}
+
+/* ---------------------------------------------------------------- stats page */
+
+.${CLASS.stats} {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.${CLASS.statsHead} {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.${CLASS.statsTitle} {
+  color: var(--dsw-alias-label-primary);
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 500;
+}
+
+.${CLASS.statsSubtitle} {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+/* Segmented mode switch: the settings panel's own chip geometry. */
+.${CLASS.tabs} {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.${CLASS.tab} {
+  height: 28px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  cursor: pointer;
+}
+
+.${CLASS.tab}:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.${CLASS.tab}[aria-pressed='true'] {
+  background: var(--dsw-alias-bg-layer-3);
+  color: var(--dsw-alias-label-primary);
+  font-weight: 500;
+}
+
+/* Total card: the query's headline number. */
+.${CLASS.statsTotal} {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.${CLASS.statsTotalValue} {
+  color: var(--dsw-alias-label-primary);
+  font-size: 22px;
+  line-height: 28px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.${CLASS.statsMetrics} {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px 12px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.${CLASS.metric} {
+  white-space: nowrap;
+}
+
+/* Tables: quiet rows, right-aligned numerics, tappable bucket rows. */
+.${CLASS.table} {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+.${CLASS.table} th {
+  padding: 0 8px 6px;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
+  color: var(--dsw-alias-label-tertiary);
+  font-weight: 400;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.${CLASS.table} td {
+  padding: 7px 8px;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l1);
+  color: var(--dsw-alias-label-secondary);
+  vertical-align: top;
+}
+
+.${CLASS.table} tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.${CLASS.table} th.${CLASS.num},
+.${CLASS.table} td.${CLASS.num} {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.${CLASS.table} th:first-child,
+.${CLASS.table} td:first-child {
+  padding-left: 0;
+}
+
+.${CLASS.table} th:last-child,
+.${CLASS.table} td:last-child {
+  padding-right: 0;
+}
+
+.${CLASS.session} {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--dsw-alias-label-primary);
+}
+
+.${CLASS.moneySub} {
+  display: block;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.${CLASS.badge} {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-layer-3);
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+  vertical-align: 1px;
+}
+
+.${CLASS.selectable} {
+  cursor: pointer;
+}
+
+.${CLASS.selectable}:hover td {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.${CLASS.selected} td {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.${CLASS.statsNote} {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.${CLASS.empty} {
+  padding: 16px;
+  border: 0.5px dashed var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+  text-align: center;
 }
 `
 

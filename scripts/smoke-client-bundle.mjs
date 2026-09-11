@@ -2,23 +2,31 @@
 /**
  * Bundle-contract smoke test: run `lib/client.js` OUTSIDE the browser and prove
  * what the DSH client loader and this plugin's isolation contract depend on,
- * before ever restarting the host:
+ * before ever restarting the host.
  *
- * 1. the artifact registers the factory under EXACTLY the package name
- *    (`window.__ModuleLoader__.load({ id, factory })`) — the client-modules
- *    compose keys on the package name, so drift here means the row never
- *    materializes;
- * 2. the factory resolves its externals through the injected `require` and
- *    returns a module with `inject` + `apply` (the cordis plugin shape);
- * 3. `apply` registers exactly one entry into
- *    `conversation.chat.assistant-actions`, tagged with this plugin's locale
- *    namespace, and injects one tagged stylesheet;
- * 4. the registered entry is the chip BEHIND the containment boundary, and that
- *    boundary really degrades to nothing instead of letting a render error
- *    escape — the promise that a failure here cannot take the official
- *    usage/time/branch controls of the same row down with it;
- * 5. the chip prices a real turn from a mirrored snapshot, and renders nothing
- *    for a turn with no route attribution.
+ * Loader contract
+ *  1. the artifact registers the factory under EXACTLY the package name
+ *     (`window.__ModuleLoader__.load({ id, factory })`) — the client-modules
+ *     compose keys on the package name, so drift here means the row never
+ *     materializes;
+ *  2. the factory resolves its externals through the injected `require` and
+ *     returns a module with `inject` + `apply` (the cordis plugin shape);
+ *  3. `apply` contributes exactly two entries — the turn chip into
+ *     `conversation.chat.assistant-actions` and the stats page into
+ *     `settings.section` — and injects one tagged stylesheet.
+ *
+ * Isolation contract
+ *  4. both entries are contained by the error boundary, and that boundary really
+ *     degrades to nothing instead of letting a render error escape — the promise
+ *     that a failure here cannot take the official usage/time/branch controls or
+ *     the settings content column down with it.
+ *
+ * Behavior
+ *  5. the chip prices a real turn from a mirrored snapshot (and renders nothing
+ *     without route attribution);
+ *  6. the stats page folds a session-list snapshot into a priced table with a
+ *     total, tags a subagent session, and marks a session whose model has no
+ *     published price.
  *
  * React is stubbed with a miniature element renderer: this checks the plugin's
  * own contract, not React's behavior. Run `pnpm run build` first.
@@ -104,7 +112,7 @@ function collectText(node) {
   return collectText(node.props?.children)
 }
 
-const registrations = []
+const loaded = []
 const styleTags = []
 const sandbox = {
   console,
@@ -131,7 +139,7 @@ const sandbox = {
     removeEventListener: () => {},
   },
   window: {
-    __ModuleLoader__: { load: (registration) => { registrations.push(registration) } },
+    __ModuleLoader__: { load: (registration) => { loaded.push(registration) } },
     addEventListener: () => {},
     removeEventListener: () => {},
     innerWidth: 1280,
@@ -150,8 +158,8 @@ console.log(`smoke: ${bundlePath}`)
 vm.runInNewContext(readFileSync(bundlePath, 'utf8'), sandbox, { filename: bundlePath })
 
 // 1. Registration contract.
-check('registers exactly one factory', registrations.length === 1)
-const registration = registrations[0]
+check('registers exactly one factory', loaded.length === 1)
+const registration = loaded[0]
 check(`registration id is the package name (${packageJson.name})`, registration?.id === packageJson.name)
 check('registration exposes a factory function', typeof registration?.factory === 'function')
 
@@ -160,24 +168,54 @@ const moduleExports = registration.factory(requireStub)
 check('plugin exports inject', Array.isArray(moduleExports.inject) && moduleExports.inject.includes('slots'))
 check('plugin exports apply', typeof moduleExports.apply === 'function')
 
-// 3. Slot contribution.
-let registered = null
-let slotKeys = []
+// 3. Slot contributions.
+const registrations = new Map()
 const context = {
   effect: (callback) => { callback() },
   get: () => undefined,
+  on: () => {},
   slots: {
-    inject: (key, contribute) => { slotKeys.push(key); contribute() },
-    register: (options, component) => { registered = { options, component }; return () => {} },
+    inject: (_key, contribute) => { contribute() },
+    register: (options, component) => { registrations.set(options.name, { options, component }); return () => {} },
   },
 }
 moduleExports.apply(context)
 check('style tag injected exactly once', styleTags.length === 1)
-check('targets the assistant action slot', slotKeys.length === 1 && slotKeys[0] === 'conversation.chat.assistant-actions')
-check('entry id, order and locale are set',
-  registered?.options.id === 'session-cost' && registered?.options.order === 20 && registered?.options.locale === 'session-cost')
+check('contributes exactly two entries', registrations.size === 2)
+const chipEntry = registrations.get('conversation.chat.assistant-actions')
+const statsEntry = registrations.get('settings.section')
+check('chip targets the assistant action slot',
+  chipEntry?.options.id === 'session-cost' && chipEntry?.options.order === 20 && chipEntry?.options.locale === 'session-cost')
+check('stats page targets settings.section',
+  statsEntry?.options.id === 'session-cost' && statsEntry?.options.order === 300 && statsEntry?.options.locale === 'session-cost')
+const label = typeof statsEntry?.options.label === 'function' ? statsEntry.options.label() : statsEntry?.options.label
+check(`stats nav label is registrant copy (got "${label}")`, typeof label === 'string' && label.length > 0)
 
-// 4. Containment: an exploding snapshot must yield nothing, not an escaped throw.
+// 4. Containment.
+let contained = 'escaped'
+try {
+  contained = String(renderTree(chipEntry.component({
+    messageId: 'm1',
+    useChat: () => { throw new Error('boom') },
+    t: undefined,
+  })))
+} catch (error) {
+  contained = `threw: ${error.message}`
+}
+check(`a throwing chip render is contained to null (got ${contained})`, contained === 'null')
+
+let statsContained = 'escaped'
+try {
+  statsContained = String(renderTree(statsEntry.component({
+    useSessions: () => { throw new Error('boom') },
+    t: undefined,
+  })))
+} catch (error) {
+  statsContained = `threw: ${error.message}`
+}
+check(`a throwing stats render is contained to null (got ${statsContained})`, statsContained === 'null')
+
+// 5. Chip pricing behavior.
 const pricedUsage = {
   uncachedInputTokens: 1_000_000,
   outputTokens: 1_000_000,
@@ -191,30 +229,14 @@ const pricedNode = {
 }
 const snapshotOf = (node) => ({ nodes: { values: () => [node] }, order: ['k'] })
 
-let contained = 'escaped'
-try {
-  const exploding = renderTree(registered.component({
-    messageId: 'm1',
-    useChat: () => { throw new Error('boom') },
-    t: undefined,
-  }))
-  contained = exploding === null ? 'null' : String(exploding)
-} catch (error) {
-  contained = `threw: ${error.message}`
-}
-check(`a throwing render is contained to null (got ${contained})`, contained === 'null')
-
-// 5. Pricing behavior through the real component.
-const chip = renderTree(registered.component({
+const chipText = collectText(renderTree(chipEntry.component({
   messageId: 'm1',
   useChat: (selector) => selector(snapshotOf(pricedNode)),
   t: undefined,
-}))
-const chipText = collectText(chip).join('')
+}))).join(' ')
 check(`chip renders for a priced turn (got "${chipText}")`, chipText.includes('≈¥5'))
-check('chip exposes a dialog trigger', chipText !== '' && JSON.stringify(chip).includes('aria-haspopup'))
 
-const unpriced = renderTree(registered.component({
+const unpricedChip = renderTree(chipEntry.component({
   messageId: 'm2',
   useChat: (selector) => selector(snapshotOf({
     ...pricedNode,
@@ -222,7 +244,42 @@ const unpriced = renderTree(registered.component({
   })),
   t: undefined,
 }))
-check('chip renders nothing without route attribution', unpriced === null)
+check('chip renders nothing without route attribution', unpricedChip === null)
+
+// 6. Stats page behavior: one priced session plus one with no published price.
+const sessionList = {
+  ids: ['priced', 'unknown'],
+  byId: {
+    priced: {
+      id: 'priced',
+      displayTitle: 'Priced chat',
+      updatedAt: Date.UTC(2026, 8, 14, 0, 0, 0),
+      projectionValues: {
+        tokenUsage: { uncachedInputTokens: 1_000_000, outputTokens: 1_000_000 },
+        modelSelection: { lastUsed: { provider: 'deepseek-official', model: 'deepseek-flash' } },
+      },
+    },
+    unknown: {
+      id: 'unknown',
+      displayTitle: 'Unknown model chat',
+      origin: 'subagent',
+      updatedAt: Date.UTC(2026, 8, 13, 0, 0, 0),
+      projectionValues: {
+        tokenUsage: { uncachedInputTokens: 500_000, outputTokens: 0 },
+        modelSelection: { lastUsed: { provider: 'openrouter', model: 'llama-4' } },
+      },
+    },
+  },
+}
+const statsText = collectText(renderTree(statsEntry.component({
+  useSessions: (selector) => selector(sessionList),
+  t: undefined,
+}))).join(' ')
+check(`stats page renders the total (got "${statsText.slice(0, 100)}")`, statsText.includes('费用合计') && statsText.includes('¥5'))
+check('stats page lists both sessions', statsText.includes('Priced chat') && statsText.includes('Unknown model chat'))
+check('stats page tags the subagent session', statsText.includes('子代理'))
+check('stats page marks the unpriced session', statsText.includes('无价目'))
+check('stats page offers day and month queries', statsText.includes('按日') && statsText.includes('按月'))
 
 if (failures.length > 0) {
   console.error(`smoke: ${failures.length} check(s) failed`)

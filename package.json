@@ -1,7 +1,7 @@
 {
   "name": "dsh-session-cost",
-  "version": "0.1.0",
-  "description": "DSH Web plugin: per-turn cost estimation (CNY + USD) beside the native turn-usage pill, driven by the official DeepSeek price table with peak/off-peak windows.",
+  "version": "0.2.0",
+  "description": "DSH Web plugin: per-turn cost beside the native turn-usage pill, plus a Cost-stats settings page with day/month queries. Official DeepSeek price tables (CNY + USD), peak/off-peak aware.",
   "type": "module",
   "license": "MIT",
   "keywords": [

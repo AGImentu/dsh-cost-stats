@@ -105,6 +105,12 @@ export interface SlotRegistrationOptions {
   readonly id: string
   readonly order?: number
   readonly locale?: string
+  /**
+   * Display label for list entries whose owner renders one (the settings nav).
+   * A thunk is re-evaluated per render, so registrant-localized copy stays live
+   * without re-registering on every locale change.
+   */
+  readonly label?: string | (() => string)
 }
 
 /** The slot registry service contributed by `@deepseek-ai/dsh-client-ui-renderer`. */
@@ -134,6 +140,11 @@ export interface LocaleServiceLike {
    * @returns the unregister function.
    */
   register(ns: string, dictionaries: Readonly<Record<string, Readonly<Record<string, string>>>>): () => void
+  /**
+   * Read the current locale snapshot, when the service exposes one.
+   * @returns the snapshot carrying the active locale id.
+   */
+  getSnapshot?(): { readonly active?: string }
 }
 
 /** The browser-side cordis context surface this plugin's `apply` uses. */
@@ -151,4 +162,68 @@ export interface ClientContextLike {
    * @returns the service, or undefined.
    */
   get?(name: string): unknown
+  /**
+   * Subscribe to a framework event, tolerating a host that does not emit it.
+   * @param event - event name.
+   * @param listener - event listener.
+   */
+  on?(event: string, listener: (payload: never) => void): void
+}
+
+/** Token buckets as the host's cumulative `tokenUsage` projection reports them. */
+export interface TokenUsageProjectionLike {
+  readonly uncachedInputTokens?: number
+  readonly outputTokens?: number
+  readonly cacheReadTokens?: number
+  readonly cacheWriteTokens?: number
+}
+
+/** Durable model selection as the host's `modelSelection` projection reports it. */
+export interface ModelSelectionProjectionLike {
+  /** Selection consumed by the latest recorded model request. */
+  readonly lastUsed?: { readonly provider: string; readonly model: string } | null
+  /** Selection the next request should use. */
+  readonly next?: { readonly provider: string; readonly model: string } | null
+}
+
+/** The projection slice this plugin reads off one session-list row. */
+export interface SessionProjectionValuesLike {
+  readonly tokenUsage?: TokenUsageProjectionLike
+  readonly modelSelection?: ModelSelectionProjectionLike
+}
+
+/**
+ * One row of the client session list (`SessionSummary`), narrowed to the fields
+ * the stats page reads. `projectionValues` are the host-computed values the
+ * object layer retains, which is what lets the page summarize a cold session
+ * without activating it.
+ */
+export interface SessionSummaryLike {
+  readonly id: string
+  readonly title?: string
+  readonly displayTitle?: string
+  /** `'subagent'` marks a session spawned by a subagent rather than a human chat. */
+  readonly origin?: string
+  readonly running?: boolean
+  readonly blank?: boolean
+  /** Epoch ms of the last durable activity. */
+  readonly updatedAt?: number
+  readonly projectionValues?: SessionProjectionValuesLike
+}
+
+/** Snapshot of `useSessions` (list plus current selection). */
+export interface SessionListStateLike {
+  readonly ids: readonly string[]
+  readonly byId: Readonly<Record<string, SessionSummaryLike | undefined>>
+}
+
+/** Selector hook over the client session list (a ROOT-scope standard seat). */
+export type UseSessionsLike = <T>(selector: (state: SessionListStateLike) => T) => T
+
+/** Props of the settings section entry (`settings.section`, root scope). */
+export interface CostStatsProps {
+  /** Session-list selector hook from the framework standard kit. */
+  readonly useSessions?: UseSessionsLike
+  /** Locale translator for this plugin's namespace. */
+  readonly t?: Translator
 }
