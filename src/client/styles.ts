@@ -1,7 +1,7 @@
 /**
  * Plugin-owned stylesheet.
  *
- * Injected as a single `<style data-plugin="dsh-session-cost">` tag when the
+ * Injected as a single `<style data-plugin="dsh-cost-stats">` tag when the
  * plugin applies, and removed with its disposer — the same tagged-style
  * convention the official client-bundle preset uses for CSS Modules. A plain
  * class-name sheet (instead of CSS Modules) is deliberate: an out-of-tree plugin
@@ -14,61 +14,61 @@
  * mirrors the native turn-usage dialog
  * (`ui-chat/src/client/chat/stat-dialog.module.css`).
  *
- * @module dsh-session-cost/client/styles
+ * @module dsh-cost-stats/client/styles
  */
 
 /** Plugin id used for the tagged style element. */
-export const STYLE_PLUGIN_ID = 'dsh-session-cost'
+export const STYLE_PLUGIN_ID = 'dsh-cost-stats'
 
 /** Class names shared by the chip and its panel. */
 export const CLASS = {
-  root: 'dsh-session-cost',
-  trigger: 'dsh-session-cost__trigger',
-  label: 'dsh-session-cost__label',
-  panel: 'dsh-session-cost__panel',
-  title: 'dsh-session-cost__title',
-  titleLabel: 'dsh-session-cost__titleLabel',
-  titleValue: 'dsh-session-cost__titleValue',
-  rule: 'dsh-session-cost__rule',
-  details: 'dsh-session-cost__details',
-  items: 'dsh-session-cost__items',
-  cost: 'dsh-session-cost__cost',
-  total: 'dsh-session-cost__total',
-  note: 'dsh-session-cost__note',
-  reasoning: 'dsh-session-cost__reasoning',
-  stats: 'dsh-session-cost__stats',
-  statsHead: 'dsh-session-cost__statsHead',
-  statsTitle: 'dsh-session-cost__statsTitle',
-  statsSubtitle: 'dsh-session-cost__statsSubtitle',
-  toolbar: 'dsh-session-cost__toolbar',
-  field: 'dsh-session-cost__field',
-  pickerPanel: 'dsh-session-cost__picker',
-  pickerHead: 'dsh-session-cost__pickerHead',
-  pickerTitle: 'dsh-session-cost__pickerTitle',
-  pickerNav: 'dsh-session-cost__pickerNav',
-  pickerFoot: 'dsh-session-cost__pickerFoot',
-  pickerAction: 'dsh-session-cost__pickerAction',
-  calGrid: 'dsh-session-cost__calGrid',
-  calMonths: 'dsh-session-cost__calMonths',
-  calWeekday: 'dsh-session-cost__calWeekday',
-  calCell: 'dsh-session-cost__calCell',
-  statsTotal: 'dsh-session-cost__statsTotal',
-  statsTotalRow: 'dsh-session-cost__statsTotalRow',
-  statsTotalValue: 'dsh-session-cost__statsTotalValue',
-  statsMetrics: 'dsh-session-cost__statsMetrics',
-  metric: 'dsh-session-cost__metric',
-  table: 'dsh-session-cost__table',
-  session: 'dsh-session-cost__session',
-  moneyCell: 'dsh-session-cost__moneyCell',
-  moneyInline: 'dsh-session-cost__moneyInline',
-  pager: 'dsh-session-cost__pager',
-  pagerInfo: 'dsh-session-cost__pagerInfo',
-  pagerActions: 'dsh-session-cost__pagerActions',
-  pagerAction: 'dsh-session-cost__pagerAction',
-  badge: 'dsh-session-cost__badge',
-  moneySub: 'dsh-session-cost__moneySub',
-  statsNote: 'dsh-session-cost__statsNote',
-  empty: 'dsh-session-cost__empty',
+  root: 'dsh-cost-stats',
+  trigger: 'dsh-cost-stats__trigger',
+  label: 'dsh-cost-stats__label',
+  panel: 'dsh-cost-stats__panel',
+  title: 'dsh-cost-stats__title',
+  titleLabel: 'dsh-cost-stats__titleLabel',
+  titleValue: 'dsh-cost-stats__titleValue',
+  rule: 'dsh-cost-stats__rule',
+  details: 'dsh-cost-stats__details',
+  items: 'dsh-cost-stats__items',
+  cost: 'dsh-cost-stats__cost',
+  total: 'dsh-cost-stats__total',
+  note: 'dsh-cost-stats__note',
+  reasoning: 'dsh-cost-stats__reasoning',
+  stats: 'dsh-cost-stats__stats',
+  statsHead: 'dsh-cost-stats__statsHead',
+  statsTitle: 'dsh-cost-stats__statsTitle',
+  statsSubtitle: 'dsh-cost-stats__statsSubtitle',
+  toolbar: 'dsh-cost-stats__toolbar',
+  field: 'dsh-cost-stats__field',
+  pickerPanel: 'dsh-cost-stats__picker',
+  pickerHead: 'dsh-cost-stats__pickerHead',
+  pickerTitle: 'dsh-cost-stats__pickerTitle',
+  pickerNav: 'dsh-cost-stats__pickerNav',
+  pickerFoot: 'dsh-cost-stats__pickerFoot',
+  pickerAction: 'dsh-cost-stats__pickerAction',
+  calGrid: 'dsh-cost-stats__calGrid',
+  calMonths: 'dsh-cost-stats__calMonths',
+  calWeekday: 'dsh-cost-stats__calWeekday',
+  calCell: 'dsh-cost-stats__calCell',
+  statsTotal: 'dsh-cost-stats__statsTotal',
+  statsTotalRow: 'dsh-cost-stats__statsTotalRow',
+  statsTotalValue: 'dsh-cost-stats__statsTotalValue',
+  statsMetrics: 'dsh-cost-stats__statsMetrics',
+  metric: 'dsh-cost-stats__metric',
+  table: 'dsh-cost-stats__table',
+  session: 'dsh-cost-stats__session',
+  moneyCell: 'dsh-cost-stats__moneyCell',
+  moneyInline: 'dsh-cost-stats__moneyInline',
+  pager: 'dsh-cost-stats__pager',
+  pagerInfo: 'dsh-cost-stats__pagerInfo',
+  pagerActions: 'dsh-cost-stats__pagerActions',
+  pagerAction: 'dsh-cost-stats__pagerAction',
+  badge: 'dsh-cost-stats__badge',
+  moneySub: 'dsh-cost-stats__moneySub',
+  statsNote: 'dsh-cost-stats__statsNote',
+  empty: 'dsh-cost-stats__empty',
 } as const
 
 /** The stylesheet text injected once per plugin lifetime. */

@@ -30,7 +30,7 @@
  * own contract, not React's behavior. Run `pnpm run build` first.
  *
  * @usage node scripts/smoke-client-bundle.mjs
- * @module dsh-session-cost/scripts/smoke-client-bundle
+ * @module dsh-cost-stats/scripts/smoke-client-bundle
  */
 
 import { readFileSync } from 'node:fs'
@@ -227,9 +227,9 @@ check('contributes exactly two entries', registrations.size === 2)
 const chipEntry = registrations.get('conversation.chat.assistant-actions')
 const statsEntry = registrations.get('settings.section')
 check('chip targets the assistant action slot',
-  chipEntry?.options.id === 'session-cost' && chipEntry?.options.order === 20 && chipEntry?.options.locale === 'session-cost')
+  chipEntry?.options.id === 'cost-stats' && chipEntry?.options.order === 20 && chipEntry?.options.locale === 'cost-stats')
 check('stats page targets settings.section',
-  statsEntry?.options.id === 'session-cost' && statsEntry?.options.order === 300 && statsEntry?.options.locale === 'session-cost')
+  statsEntry?.options.id === 'cost-stats' && statsEntry?.options.order === 300 && statsEntry?.options.locale === 'cost-stats')
 const label = typeof statsEntry?.options.label === 'function' ? statsEntry.options.label() : statsEntry?.options.label
 check(`stats nav label is registrant copy (got "${label}")`, typeof label === 'string' && label.length > 0)
 
@@ -298,7 +298,7 @@ check('stats page offers a day field and a month picker',
 check(`stats page opens on today's replies (field shows ${todayKey}, got "${statsText.slice(0, 60)}")`,
   statsText.includes(todayKey))
 check(`stats page fetches the plugin host route (got ${JSON.stringify(fetched)})`,
-  fetched.includes('/session-cost/usage'))
+  fetched.includes('/cost-stats/usage'))
 
 // 7. Fallback path: core withheld the turn's usage, the host fold still prices it.
 const withheldNode = {

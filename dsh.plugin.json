@@ -1,0 +1,16 @@
+{
+  "id": "AGImentu/dsh-cost-stats",
+  "version": "0.7.0",
+  "main": "./lib/index.js",
+  "description": "在每条助手消息旁显示这一回合的费用胶囊（官方价目表 CNY + USD、高峰/空闲感知），并在设置里提供逐条计费项的「费用统计」页（回复与上下文压缩分开列出、日历选日/选月、分页）",
+  "engines": {
+    "dsh": ">=0.1.5-rc.2"
+  },
+  "contributes": {
+    "tools": [],
+    "skills": []
+  },
+  "client": {
+    "main": "./lib/client.js"
+  }
+}

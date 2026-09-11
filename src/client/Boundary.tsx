@@ -11,7 +11,7 @@
  * in the cost chip degrades to "no chip" and leaves every sibling control
  * exactly as the core rendered it.
  *
- * @module dsh-session-cost/client/Boundary
+ * @module dsh-cost-stats/client/Boundary
  */
 
 import { Component, type ReactNode } from 'react'
@@ -45,7 +45,7 @@ export class CostChipBoundary extends Component<{ children: ReactNode }, CostBou
    * @param error - the error a descendant threw.
    */
   override componentDidCatch(error: unknown): void {
-    console.warn('[dsh-session-cost] cost chip disabled after a render error:', error)
+    console.warn('[dsh-cost-stats] cost chip disabled after a render error:', error)
   }
 
   /**

@@ -9,7 +9,7 @@
  * message: one fetch per TTL, shared by every chip, concurrent callers joining
  * the same request.
  *
- * @module dsh-session-cost/client/usage-store
+ * @module dsh-cost-stats/client/usage-store
  */
 
 import { USAGE_ROUTE } from '../routes.ts'
@@ -34,7 +34,7 @@ export const USAGE_TTL_MS = 30_000
 /** Fetch-shaped function, resolved lazily so tests can stub the global. */
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>
 
-/** Observable cache over the host's `/session-cost/usage` payload. */
+/** Observable cache over the host's `/cost-stats/usage` payload. */
 export class UsageStore {
   private snapshot: UsageSnapshot = EMPTY
   private readonly listeners = new Set<() => void>()

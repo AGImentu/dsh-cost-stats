@@ -4,7 +4,7 @@
  * Types only — the client imports this, the host produces it, and nothing
  * runtime crosses between the two halves.
  *
- * @module dsh-session-cost/rows
+ * @module dsh-cost-stats/rows
  */
 
 /** One billed item: an assistant reply (turn) or a context-compaction call. */
@@ -44,7 +44,7 @@ export interface TurnCostRow {
   readonly attempts: number
 }
 
-/** The `GET /session-cost/usage` payload. */
+/** The `GET /cost-stats/usage` payload. */
 export interface UsagePayload {
   readonly generatedAt: number
   /** Stored sessions the backend reports. */

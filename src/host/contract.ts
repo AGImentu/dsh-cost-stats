@@ -14,7 +14,7 @@
  *   returning its disposer (`packages/host/webserver`);
  * - the durable `session` header (id / createdAt / cwd / delegationDepth).
  *
- * @module dsh-session-cost/host/contract
+ * @module dsh-cost-stats/host/contract
  */
 
 /** One durable session header, narrowed to the fields this plugin reads. */

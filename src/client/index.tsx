@@ -1,5 +1,5 @@
 /**
- * Browser half of dsh-session-cost: two contributions plus the plugin's own
+ * Browser half of dsh-cost-stats: two contributions plus the plugin's own
  * stylesheet and dictionaries.
  *
  * 1. `conversation.chat.assistant-actions` — the per-turn cost chip beside the
@@ -15,7 +15,7 @@
  * change and no host service. The plugin touches no store, no host API, and no
  * DOM outside its own elements.
  *
- * @module dsh-session-cost/client
+ * @module dsh-cost-stats/client
  */
 
 import type { ReactNode } from 'react'
@@ -82,14 +82,14 @@ function navLabelFor(active: string | undefined): string {
  * @returns nothing.
  */
 export function apply(ctx: ClientContextLike): void {
-  ctx.effect(() => installStyles(), 'dsh-session-cost: styles')
+  ctx.effect(() => installStyles(), 'dsh-cost-stats: styles')
 
   // Read the locale service through the root reflect store: the dictionaries are
   // an enhancement, so a host without the service still renders both entries
   // (with the built-in Chinese fallback) instead of leaving them pending.
   const locale = ctx.get?.('locale') as LocaleServiceLike | undefined
   if (locale !== undefined) {
-    ctx.effect(() => locale.register(NS, { zh, en }), 'dsh-session-cost: dictionaries')
+    ctx.effect(() => locale.register(NS, { zh, en }), 'dsh-cost-stats: dictionaries')
   }
 
   // The settings shell owns the nav cell and reads the label from this
@@ -102,7 +102,7 @@ export function apply(ctx: ClientContextLike): void {
 
   ctx.slots.inject('conversation.chat.assistant-actions', () => ctx.slots.register({
     name: 'conversation.chat.assistant-actions',
-    id: 'session-cost',
+    id: 'cost-stats',
     // After the core feedback entry (order 10); the core usage/time pills are
     // not list entries, so this chip sits in the plugin cell of the row.
     order: 20,
@@ -111,7 +111,7 @@ export function apply(ctx: ClientContextLike): void {
 
   ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section',
-    id: 'session-cost',
+    id: 'cost-stats',
     order: STATS_ORDER,
     label: () => navLabelFor(activeLocale),
     locale: NS,

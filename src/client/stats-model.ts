@@ -6,7 +6,7 @@
  * browser. Granularity here is the REPLY (one assistant turn); the day and month
  * pickers only change which rows are selected, never the row shape.
  *
- * @module dsh-session-cost/client/stats-model
+ * @module dsh-cost-stats/client/stats-model
  */
 
 import type { TurnCostRow } from '../rows.ts'

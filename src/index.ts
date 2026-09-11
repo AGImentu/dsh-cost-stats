@@ -1,13 +1,13 @@
 /**
- * Host half of dsh-session-cost.
+ * Host half of dsh-cost-stats.
  *
  * Two jobs:
  *
  * 1. be a live Loader row so `dsh-client-modules` discovers this package's
  *    `dsh.client` declaration and composes `lib/client.js` into the browser
  *    boot graph;
- * 2. serve the statistics page's data: `GET /session-cost/usage` folds every
- *    stored session log into per-reply priced rows (`SessionCostIndex`).
+ * 2. serve the statistics page's data: `GET /cost-stats/usage` folds every
+ *    stored session log into per-reply priced rows (`CostStatsIndex`).
  *
  * The route is a plain same-origin JSON endpoint registered through
  * `ctx.webServer`, so it rides the app's existing browser authentication and
@@ -15,15 +15,15 @@
  * a `fetch`. Nothing here touches the session loop, and a failure is contained:
  * the handler answers 500 with a message instead of throwing into the webserver.
  *
- * @module dsh-session-cost
+ * @module dsh-cost-stats
  */
 
 import type { HostContextLike, ServerResponseLike } from './host/contract.ts'
-import { SessionCostIndex } from './host/session-cost-index.ts'
+import { CostStatsIndex } from './host/cost-stats-index.ts'
 import { USAGE_ROUTE } from './routes.ts'
 
 /** Cordis plugin name, matching the package name and the patched row id. */
-export const name = 'dsh-session-cost'
+export const name = 'dsh-cost-stats'
 
 /** Host services required before mounting: the route table and session storage. */
 export const inject = ['webServer', 'sessionPersistence']
@@ -61,7 +61,7 @@ function wantsRefresh(req: unknown): boolean {
  * @returns nothing.
  */
 export function apply(ctx: HostContextLike): void {
-  const index = new SessionCostIndex(ctx)
+  const index = new CostStatsIndex(ctx)
   ctx.effect(() => ctx.webServer.register({
     kind: 'exact',
     path: USAGE_ROUTE,
@@ -70,9 +70,9 @@ export function apply(ctx: HostContextLike): void {
         writeJson(res, 200, await index.payload(wantsRefresh(req)))
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
-        ctx.logger?.warn(`dsh-session-cost: ${USAGE_ROUTE} failed: ${message}`)
+        ctx.logger?.warn(`dsh-cost-stats: ${USAGE_ROUTE} failed: ${message}`)
         writeJson(res, 500, { error: message })
       }
     },
-  }), 'dsh-session-cost: usage route')
+  }), 'dsh-cost-stats: usage route')
 }

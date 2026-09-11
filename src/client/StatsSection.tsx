@@ -11,10 +11,10 @@
  * selected — there is no second, aggregate table to drift out of sync with the
  * rows below it.
  *
- * Data comes from the plugin's own host route (`GET /session-cost/usage`), which
+ * Data comes from the plugin's own host route (`GET /cost-stats/usage`), which
  * folds every stored session log into per-reply priced rows.
  *
- * @module dsh-session-cost/client/StatsSection
+ * @module dsh-cost-stats/client/StatsSection
  */
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
@@ -128,7 +128,7 @@ export function CostStatsSection({ t }: CostStatsProps): ReactNode {
   }, [])
 
   return (
-    <div className={CLASS.stats} data-session-cost-stats>
+    <div className={CLASS.stats} data-cost-stats-page>
       <div className={CLASS.statsHead}>
         <div className={CLASS.statsTitle}>{tr('stats.title')}</div>
         <div className={CLASS.statsSubtitle}>{tr('stats.subtitle')}</div>

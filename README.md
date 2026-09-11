@@ -1,12 +1,27 @@
-# dsh-session-cost
+# dsh-cost-stats
+
+<p>
+  <a href="https://github.com/AGImentu/dsh-cost-stats/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/AGImentu/dsh-cost-stats/actions/workflows/ci.yml/badge.svg" /></a>
+  <a href="https://github.com/AGImentu/dsh-cost-stats/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/AGImentu/dsh-cost-stats" /></a>
+  <img alt="DSH 0.1.5-rc.2" src="https://img.shields.io/badge/DSH-0.1.5--rc.2-4d6bfe" />
+  <a href="https://opensource.org/licenses/MIT"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg" /></a>
+  <img alt="无内核改动" src="https://img.shields.io/badge/%E6%97%A0%E5%86%85%E6%A0%B8%E6%94%B9%E5%8A%A8-%E5%8F%AA%E7%94%A8%E5%85%AC%E5%BC%80%E6%8F%92%E6%A7%BD-4d6bfe" />
+  <img alt="中英双语" src="https://img.shields.io/badge/%E7%95%8C%E9%9D%A2-zh%20%2F%20en-4d6bfe" />
+</p>
 
 **在 DeepSeek Harness 的每条助手消息旁,显示这次对话花了多少钱。**
 
-一个纯客户端的 DSH Web 插件:在消息尾行的原生「用量 612K tok」胶囊旁边,加一个 `≈¥0.709` 的费用胶囊;
+一个 DSH Web 插件:在消息尾行的原生「用量 612K tok」胶囊旁边,加一个 `≈¥0.709` 的费用胶囊;
 点开可以看到这一次对话的分档明细、计费模型、高峰/空闲时段,以及本次会话的累计费用。
+设置里还有一个**费用统计**页,把每一次计费项(回复 + 上下文压缩)列成流水。
 
 > 数据来源与原生「用量」弹窗**完全同源**(供应商上报的 token 分档),不是估算 token 再套平均价;
 > 价格用官方公布的两套价目表(人民币 + 美元),含旧模型名的计费归属与 2026-09-14 的 v4-pro 改路规则。
+> 不读任何凭据、不访问外网、不改 DSH 内核。
+
+**目录**:[效果](#-效果) · [功能](#-功能) · [安装](#-安装) · [它怎么算](#-它怎么算) ·
+[费用统计页](#-费用统计页设置--费用统计) · [与账户余额核对](#-与账户余额核对) ·
+[开发](#-开发) · [已知边界](#-已知边界)
 
 ---
 
@@ -30,7 +45,7 @@
 - `压缩` 标签:上下文压缩是独立计费项(图里 14:17 那行 ¥1.45),它不属于任何回复,官方胶囊不显示它;
 - 分页:每页 15 条,底部 `第 1 / 2 页 · 共 18 条 · 每页 15 条`。
 
-> 两张图都是本机真实数据(2026-09-11),不是示意图。
+> 两张图都是本机真实数据(2026-09-11),不是示意图;统计页那张的「会话」列做了打码。
 
 ---
 
@@ -45,37 +60,115 @@
 | **绝不编数字** | 拿不到路由归属(不知道用哪个模型计费)或模型无官方公示价时,**胶囊不显示**、统计页标 `无价目` 且不计入合计,而不是显示 0 或猜测值 |
 | **官方数据缺失时自动兜底** | DSH 核心的回合用量是「全有或全无」:一次重试请求没回报用量,官方「用量」胶囊就会整块消失(插件读的是同一个字段)。此时胶囊改用**插件自己的宿主侧日志重算**补上,并在标题与浮层里标注「按日志重算」,不与官方口径混淆;官方数据正常时永远优先用官方值 |
 | **不碰官方控件** | 两个条目都包在**错误边界**里:本插件渲染出错只会让自己那一块消失,绝不牵连同一行的复制/反馈/分支/用量/用时控件,也不影响设置面板内容列(冒烟脚本里有专门的"抛错必须被隔离"断言) |
-| **零凭据、零外网** | 不读 API key、不写任何后端、不访问外部网络。唯一的请求是发往**本机 DSH 自己**的插件路由(`GET /session-cost/usage`,同源),且只在「统计页打开」或「官方数据缺失需要兜底」时发生 |
-| **中英双语** | 字典跟随 DSH 界面语言(`locale` 命名空间 `session-cost`) |
+| **零凭据、零外网** | 不读 API key、不写任何后端、不访问外部网络。唯一的请求是发往**本机 DSH 自己**的插件路由(`GET /cost-stats/usage`,同源),且只在「统计页打开」或「官方数据缺失需要兜底」时发生 |
+| **中英双语** | 字典跟随 DSH 界面语言(`locale` 命名空间 `cost-stats`) |
 | **无内核改动** | 只使用 DSH 公开的插件插槽 `conversation.chat.assistant-actions`、`settings.section` 与平台种子模块(`react` / `react-dom`) |
 
 ---
 
 ## 📦 安装
 
-前置:DSH 已能正常运行(`dsh web` 起得来),`~/.dsh/profiles/<profile>` 已初始化。默认 profile 名是 `web`。
+**前置**:DSH 已能正常运行(`dsh web` 起得来);Node.js ≥ 20,pnpm ≥ 10。
 
-### 方式一:官方 CLI(推荐,从 npm 安装)
+**支持的 DSH 版本**:在 **DSH `0.1.5-rc.2`** 上真机验证。插件只用公开插槽
+(`conversation.chat.assistant-actions`、`settings.section`)与平台种子模块(`react` / `react-dom`),
+不 import 任何 DSH 内部包,所以对 DSH 小版本不敏感。
+
+> ⚠️ **注意包名**:npm 上另有一个同名老包 `dsh-session-cost`(别的作者,和你这个没关系),
+> 所以本插件从 0.7.0 起改名为 **`dsh-cost-stats`**。安装请认准这个名字。
+
+### 方式一:本机 tarball 安装(推荐,**现在就能用**,不依赖 npm 发布)
 
 ```sh
-dsh plugin --profile web add dsh-session-cost
+git clone https://github.com/AGImentu/dsh-cost-stats && cd dsh-cost-stats
+pnpm install && pnpm build && pnpm pack          # 产出 dsh-cost-stats-<版本>.tgz
+dsh plugin --profile web add ./dsh-cost-stats-*.tgz
 ```
 
-### 方式二:从源码/克隆安装(`link:`,便于本地改代码)
+`dsh plugin add` 就是 `pnpm add` 的转发器,所以 tarball、目录、registry 名都接受;它会顺带把
+本包追加进 `dsh.profile.bundles`(因为本包声明了 `dsh.bundle.patch`),不需要手改任何配置文件。
+
+### 方式二:源码 `link:` 安装(改代码即时生效,适合调试)
 
 ```sh
-git clone https://github.com/AGImentu/dsh-session-cost && cd dsh-session-cost
-pnpm install
-pnpm run build
+git clone https://github.com/AGImentu/dsh-cost-stats && cd dsh-cost-stats
+pnpm install && pnpm build
+dsh plugin --profile web add "link:$PWD"        # Windows PowerShell: "link:$($PWD.Path)"
+```
+
+或者用仓库里的一键脚本(等价的两步,并在 CLI 不在 PATH 时兜底):
+
+```sh
 node scripts/install-local.mjs --profile web
 ```
 
-`install-local.mjs` 做两件事,与 `dsh plugin` 的语义一致:`pnpm add link:<克隆目录>` + 按已安装状态对账 `dsh.profile.bundles`(声明了 `dsh.bundle.patch` 的依赖追加为 bundle 层)。它是幂等的。
+之后每次改代码:重新 `pnpm run build` → 重启 `dsh web` → 硬刷新浏览器。
+
+### 方式三:从 npm 安装(包发布后可用)
+
+```sh
+dsh plugin --profile web add dsh-cost-stats@latest
+```
+
+### 方式四:交给 DSH 自己装
+
+把下面这段原样发给任意一个 DSH 会话:
+
+```text
+帮我装 dsh-cost-stats 插件（DSH 费用统计），步骤：
+1. git clone https://github.com/AGImentu/dsh-cost-stats 到 ~/Code/dsh-cost-stats
+2. 在该目录执行 pnpm install && pnpm build && pnpm pack
+3. 执行 dsh plugin --profile web add ./dsh-cost-stats-*.tgz
+4. 完成后提醒我：重启 dsh web，然后硬刷新浏览器（Ctrl/Cmd+Shift+R）
+遇到报错先查 https://github.com/AGImentu/dsh-cost-stats 的 README「常见问题」表。
+```
 
 ### 装完必须做的一步
 
 **重启 `dsh web`,然后硬刷新浏览器(Ctrl/Cmd+Shift+R)。**
-新 bundle 行只在 profile 启动时装载,刷新页面不够。
+
+规则很简单:**`lib/client.js`(浏览器半边)改动,硬刷新即可;`lib/index.js`(宿主半边)改动必须重启。**
+本插件的统计页与胶囊兜底都依赖宿主半边,所以第一次安装请重启一次。
+
+<details>
+<summary><b>更新</b></summary>
+
+```sh
+cd ~/Code/dsh-cost-stats && git pull && pnpm install && pnpm build && pnpm pack
+dsh plugin --profile web add ./dsh-cost-stats-*.tgz     # tarball 方式
+# 或 link: 方式：重新 pnpm run build 即可，profile 里已经是符号链接
+```
+
+改完:client 改动硬刷新即可,**host 改动要重启 `dsh web`**。
+
+</details>
+
+<details>
+<summary><b>卸载</b></summary>
+
+```sh
+dsh plugin --profile web remove dsh-cost-stats
+```
+
+`remove` 同样会按已安装状态对账 `dsh.profile.bundles`,把本包从 bundle 层里摘掉——
+不需要手改 `~/.dsh/profiles/web/package.json`。之后重启 `dsh web`。
+
+</details>
+
+<details>
+<summary><b>常见问题</b></summary>
+
+| 现象 | 原因与解决 |
+|---|---|
+| 统计页显示「读取费用数据失败(宿主侧路由不可用)」 | **宿主半边(host)没加载**:只刷新页面不够,必须重启 `dsh web`。 |
+| 设置里没有「费用统计」这一项 | 插件没挂上:确认 `~/.dsh/profiles/web/package.json` 的 `dependencies` 有本包、`dsh.profile.bundles` 里有 `dsh-cost-stats`,然后重启。 |
+| 聊天里某个回合**没有**费用胶囊 | 该回合无官方价目(第三方 provider / 未公示模型)或拿不到路由归属时会**故意不显示**,不是崩溃。 |
+| 页面出现**两个**费用胶囊 | 双挂载:profile 的 `cordis.patch.yml` 里还留着手写的挂载行,删掉那段(与 bundle 层重复)。 |
+| 提示 `dsh: command not found` | 先用 `npx -y --package @deepseek-ai/dsh dsh plugin --profile web add dsh-cost-stats@latest`,或从源码走方式一/二。 |
+| `pnpm add` 报 `Ignored build scripts` | 本插件**没有**原生依赖、也没有生命周期脚本,正常不会出现;若你在同一 profile 装过别的插件(如带 `node-pty` 的),在 `~/.dsh/profiles/web` 下跑 `pnpm approve-builds --all`。 |
+| 数字和官方「用量」弹窗对不上 | 精度口径见下方[「与账户余额核对」](#-与账户余额核对):本插件是**按官方价目表的估算**,按回合起始时刻判高峰/空闲,并额外计入官方胶囊不显示的**压缩**。 |
+
+</details>
 
 ---
 
@@ -131,7 +224,7 @@ node scripts/install-local.mjs --profile web
 
 ### 数据来自哪里
 
-统计页读的是**插件自己的宿主路由** `GET /session-cost/usage`。宿主半边会:
+统计页读的是**插件自己的宿主路由** `GET /cost-stats/usage`。宿主半边会:
 
 1. `ctx.sessionPersistence.list()` 枚举存储里的会话(取最近的非空会话);
 2. 逐个打开并读取**完整持久化日志**(`open(id,'read')` → `handle.read()`);
@@ -147,29 +240,29 @@ node scripts/install-local.mjs --profile web
 
 ## 🔍 与账户余额核对
 
-两条路,建议用第一条(我做完 v0.3.0 时就是这么验的):
+两条路,建议用第一条:
 
 **A. 独立复算脚本(推荐)**
 
 ```sh
-pnpm run build
 node scripts/verify-balance.mjs 2026-09-11T11:07 2026-09-11T12:20
 ```
 
 它绕过宿主、直接解码 `$DSH_HOME/sessions/**` 的会话日志,用同一套折叠与价目表复算,并给出你指定时刻的**累计值**;
-把两次累计值相减,就是这段时间的真实花费,可直接与 API 余额的差值对比。
+把两次累计值相减,就是这段时间的花费,可直接与 API 余额的**差值**对比(注意:比差值,不要比余额绝对值——
+余额里还有你在这个插件之前的花费)。
 
-2026-09-11 的实测对齐结果:
+开发现场实测的三个窗口(同一台机器、同一套脚本复现):
 
-| 区间 | 账户余额变化 | 独立复算变化 | 结论 |
+| 区间 | 余额下降 | 独立复算上升 | 结论 |
 |---|---|---|---|
-| 11:07 → 12:20 | $9.03 → $8.78(**−$0.25**) | $3.61 → $3.86(**+$0.249**) | ✓ 1 美分内 |
-| 12:20 → 15:02 | $8.78 → $8.00(**−$0.78**) | $3.86 → $4.63(**+$0.77**) | ✓ 1 美分内 |
+| 11:07 → 12:20 | −$0.25 | +$0.249 | ✓ 1 美分内 |
+| 12:20 → 15:02 | −$0.78 | +$0.77 | ✓ 1 美分内 |
+| 15:02 → 15:49 | −$0.200 | +$0.200 | ✓ 零误差 |
 
-**这份对齐是 0.6.0 才成立的**:在此之前复算只统计「回复」,而 14:17:15 本会话触发过一次
-**上下文压缩**(`compaction/summary`:707,231 未缓存输入 + 22,016 缓存读取 + 4,896 输出,
-按当时高峰价 = **¥1.45 / $0.218**)。压缩是一次独立的模型调用,不属于任何回复,
-**官方「用量」胶囊也看不见它**;当时复算因此比余额少 $0.2 左右。
+**第三行这份对齐是 0.6.0 才成立的**:在此之前复算只统计「回复」,而那段时间里触发过一次
+**上下文压缩**(`compaction/summary`),按当时高峰价约 **¥1.45 / $0.218**。压缩是一次独立的模型调用,
+不属于任何回复,**官方「用量」胶囊也看不见它**;当时复算因此比余额少了 0.2 美元左右。
 0.6.0 起压缩作为独立一行(带「压缩」标签)计入合计,差额随即消失。
 
 > 结论:**插件合计与账单一致到 1 美分左右**,唯一需要留意的是
@@ -181,7 +274,7 @@ node scripts/verify-balance.mjs 2026-09-11T11:07 2026-09-11T12:20
 2. 与 API 平台余额的变化量对比(**余额以美元计**,看 `$` 那一栏,不要直接拿 `¥` 去比);
 3. 口径提示:余额还包含**标题生成**等少量调用,以及**仍在进行**的请求;
    列表里带「压缩」标签的行就是曾经的缺口,现在已计入。
-   想复现上面两张对账表,用 `pnpm run verify:balance <时刻1> <时刻2>`。
+   想复现上面那张对账表,用 `pnpm run verify:balance <时刻1> <时刻2>`。
 
 人民币与美元的官方价目表相差约 7 倍(Flash 未缓存输入:¥1 ↔ $0.15),这是官方两套公布值,不是本插件做了汇率换算。
 
@@ -213,10 +306,10 @@ src/
   pricing.ts              计费模型:价目表、别名与改路规则、高峰窗口、cost 计算、金额格式化(纯函数,单测覆盖)
   rows.ts                 宿主路由与统计页共享的 wire 类型(计费项行 / 载荷;`compaction: true` = 压缩行)
   routes.ts               路由常量(两半边共用,避免字符串漂移)
-  index.ts                host 半边:注册 GET /session-cost/usage,并作为一行 live Loader row
+  index.ts                host 半边:注册 GET /cost-stats/usage,并作为一行 live Loader row
   host/
     turn-fold.ts          纯折叠:持久化事件 → 每次回复 + 每次压缩(窗口 / 模型 / 分档 token)
-    session-cost-index.ts 索引:枚举会话 → 读日志 → 折叠 → 逐条计价 → TTL 缓存
+    cost-stats-index.ts 索引:枚举会话 → 读日志 → 折叠 → 逐条计价 → TTL 缓存
     contract.ts           host 侧契约镜像(sessionPersistence / webServer)
   client/
     index.tsx             浏览器半边:注入样式、注册字典、注册两个插槽条目(胶囊 + 统计页)
@@ -255,14 +348,34 @@ docs/images/              README 里那两张效果截图(胶囊 / 统计页)
 
 ---
 
-## 🚀 发布到 GitHub / npm(清单)
+## 🚀 发布(维护者向)
 
-- [x] 填 `package.json` 的 `repository`(GitHub 地址)与 `author`
-- [x] `pnpm run verify` 全绿
-- [x] 建仓并推送 → <https://github.com/AGImentu/dsh-session-cost>(`main`)
-- [ ] (可选)发布 npm:`pnpm publish --access public`(包名 `dsh-session-cost` 需可用)
-- [ ] (可选)给仓库打 `dsh-plugin` / `deepseek-harness` topic,便于被发现
+当前通道:**GitHub 即发布**——别人按上面的「方式一/二」从仓库装即可,不需要你做任何事。
+
+想把它也发到 npm(那样别人一句 `dsh plugin add dsh-cost-stats` 就装好了),三步:
+
+```sh
+# 1. 登录 npm（只需一次；本机默认 registry 是镜像，发布要显式指定官方源）
+npm login --registry https://registry.npmjs.org
+
+# 2. 确认包名可用（0.7.0 起用的是 dsh-cost-stats，已确认未被占用）
+npm view dsh-cost-stats version --registry https://registry.npmjs.org   # 期望 404
+
+# 3. 发布（先 pnpm run verify 全绿）
+pnpm run build && pnpm publish --access public --registry https://registry.npmjs.org
+```
+
+发版清单:
+
+- [x] `package.json` 的 `name` / `repository` / `author` 已填好,`dsh.plugin.json` 已就位
+- [x] `pnpm run verify` 全绿(typecheck + 56 项单测 + 构建 + 21 项产物冒烟)
+- [x] 推送到 <https://github.com/AGImentu/dsh-cost-stats>(`main`),CI 绿
+- [ ] 发布 npm(上面三步)
+- [ ] 给仓库打 `dsh-plugin` / `deepseek-harness` topic,便于被发现
 - [ ] 价目表变化时更新 `src/pricing.ts` 与 `tests/pricing.spec.ts`,并在 CHANGELOG 记录
+
+> 进阶:用 GitHub Actions 的 **npm Trusted Publishing(OIDC)** 免 token 自动发版
+> (npm 包设置里绑定 Org/Repo/Workflow,再在 Release 触发)——生态里成熟插件就是这么做的。
 
 ---
 
@@ -290,7 +403,7 @@ docs/images/              README 里那两张效果截图(胶囊 / 统计页)
 
 ## English (overview)
 
-`dsh-session-cost` is a DeepSeek Harness Web plugin that shows the **cost of each assistant turn** next to
+`dsh-cost-stats` is a DeepSeek Harness Web plugin that shows the **cost of each assistant turn** next to
 the native turn-usage pill, using the provider-reported token buckets (exact) and the official published
 DeepSeek price tables in both CNY and USD. Clicking the chip opens an itemized panel (billed model,
 peak/off-peak window, cache-hit ratio, uncached / cached input and output lines, turn total, session total
@@ -300,11 +413,11 @@ of every stored session, per reply and per context compaction, with day/month pi
 It renders **nothing** when an item cannot be priced, reads no credentials, and needs no core change: it
 registers into the documented `conversation.chat.assistant-actions` and `settings.section` slots, depends
 only on the frozen platform modules, and reads the durable session logs from its own host route
-(`GET /session-cost/usage`, same origin, no external network). Both entries sit behind an error boundary, so
+(`GET /cost-stats/usage`, same origin, no external network). Both entries sit behind an error boundary, so
 a plugin failure can only remove the plugin's own UI, never the official controls beside it.
 
 Verified against the account balance: three reconciliation windows on 2026-09-11 matched to within one cent
 (0.25 vs 0.249, 0.78 vs 0.77, and 0.200 vs 0.200), with context compactions folded in from 0.6.0 on.
 
-Install: `dsh plugin --profile web add dsh-session-cost` (or `node scripts/install-local.mjs` from a
+Install: `dsh plugin --profile web add dsh-cost-stats` (or `node scripts/install-local.mjs` from a
 checkout), then restart `dsh web` and hard-refresh the page.

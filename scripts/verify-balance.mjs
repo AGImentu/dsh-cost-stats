@@ -19,7 +19,7 @@
  * Usage:
  *   node scripts/verify-balance.mjs 2026-09-11T11:07 2026-09-11T12:20
  *
- * @module dsh-session-cost/scripts/verify-balance
+ * @module dsh-cost-stats/scripts/verify-balance
  */
 
 import { readFileSync, readdirSync, statSync } from 'node:fs'

@@ -26,7 +26,7 @@
  * reasoning tokens, and `totalTokens` is prompt + output. Invalid or negative
  * counts are dropped rather than summed into a wrong number.
  *
- * @module dsh-session-cost/host/turn-fold
+ * @module dsh-cost-stats/host/turn-fold
  */
 
 /** One durable event, narrowed to what the fold reads. */

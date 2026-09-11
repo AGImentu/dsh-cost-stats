@@ -1,5 +1,5 @@
 /**
- * tsdown build for dsh-session-cost.
+ * tsdown build for dsh-cost-stats.
  *
  * Two artifacts, mirroring the official DSH client-plugin shape:
  *

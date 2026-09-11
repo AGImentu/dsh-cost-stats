@@ -6,13 +6,13 @@
  * same way core surfaces do. A built-in zh fallback keeps the panel readable if
  * the locale service is missing.
  *
- * @module dsh-session-cost/client/locales
+ * @module dsh-cost-stats/client/locales
  */
 
 import type { Translator } from './contract.ts'
 
 /** Locale namespace owned by this plugin. */
-export const NS = 'session-cost'
+export const NS = 'cost-stats'
 
 /** Chinese dictionary (also the built-in fallback). */
 export const zh: Readonly<Record<string, string>> = {

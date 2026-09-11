@@ -22,7 +22,7 @@
  * Usage:
  *   node scripts/install-local.mjs [--profile web] [--no-install]
  *
- * @module dsh-session-cost/scripts/install-local
+ * @module dsh-cost-stats/scripts/install-local
  */
 
 import { execFileSync } from 'node:child_process'
@@ -59,13 +59,13 @@ const dshHome = process.env.DSH_HOME ?? join(homedir(), '.dsh')
 const profileDir = join(dshHome, 'profiles', profile)
 
 if (!existsSync(join(profileDir, 'package.json'))) {
-  console.error(`dsh-session-cost: no profile at ${profileDir}`)
+  console.error(`dsh-cost-stats: no profile at ${profileDir}`)
   console.error('run `dsh web` once to initialize it, or pass --profile <name>')
   process.exit(1)
 }
 
 if (install) {
-  console.log(`dsh-session-cost: linking ${repo} into ${profileDir}`)
+  console.log(`dsh-cost-stats: linking ${repo} into ${profileDir}`)
   // Windows resolves pnpm through its .cmd shim, which execFile refuses
   // without a shell; the spec is quoted so a checkout path with spaces stays
   // one argument.
@@ -90,7 +90,7 @@ for (const name of dependencies) {
   if (isBundle && !bundles.includes(name)) {
     bundles.push(name)
     changed = true
-    console.log(`dsh-session-cost: + bundle ${name}`)
+    console.log(`dsh-cost-stats: + bundle ${name}`)
   }
 }
 
@@ -100,14 +100,14 @@ if (changed) {
     profile: { ...profileManifest.dsh?.profile, bundles },
   }
   writeFileSync(join(profileDir, 'package.json'), JSON.stringify(profileManifest, undefined, 2) + '\n')
-  console.log(`dsh-session-cost: bundles = ${bundles.join(', ')}`)
+  console.log(`dsh-cost-stats: bundles = ${bundles.join(', ')}`)
 } else {
-  console.log('dsh-session-cost: manifest already reconciled')
+  console.log('dsh-cost-stats: manifest already reconciled')
 }
 
 const linked = join(profileDir, 'node_modules', manifest.name)
 if (!existsSync(join(linked, 'lib', 'client.js'))) {
-  console.error(`dsh-session-cost: ${linked}/lib/client.js is missing — run \`pnpm run build\` here first`)
+  console.error(`dsh-cost-stats: ${linked}/lib/client.js is missing — run \`pnpm run build\` here first`)
   process.exit(1)
 }
-console.log(`dsh-session-cost: ready — restart \`dsh web\` and hard-refresh the page (Ctrl/Cmd+Shift+R)`)
+console.log(`dsh-cost-stats: ready — restart \`dsh web\` and hard-refresh the page (Ctrl/Cmd+Shift+R)`)

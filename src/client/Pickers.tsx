@@ -8,7 +8,7 @@
  * The popover mirrors the chip's panel mechanics (portal, viewport clamp,
  * Escape / outside-press close) so the plugin has one interaction language.
  *
- * @module dsh-session-cost/client/Pickers
+ * @module dsh-cost-stats/client/Pickers
  */
 
 import {

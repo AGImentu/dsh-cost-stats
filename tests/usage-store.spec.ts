@@ -81,7 +81,7 @@ describe('UsageStore', () => {
     const { store, urls } = harness([payload([row('s1', 3)])], { value: 0 })
     store.ensure()
     await settle()
-    expect(urls).toEqual(['/session-cost/usage'])
+    expect(urls).toEqual(['/cost-stats/usage'])
     expect(store.getSnapshot().status).toBe('ready')
     expect(store.getSnapshot().rows).toHaveLength(1)
   })
@@ -115,7 +115,7 @@ describe('UsageStore', () => {
     const { store, urls } = harness([payload([]), payload([])], { value: 0 })
     store.ensure(true)
     await settle()
-    expect(urls).toEqual(['/session-cost/usage?refresh=1'])
+    expect(urls).toEqual(['/cost-stats/usage?refresh=1'])
   })
 
   it('keeps stale rows and reports the error when a refresh fails', async () => {

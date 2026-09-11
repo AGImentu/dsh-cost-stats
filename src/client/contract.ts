@@ -22,7 +22,7 @@
  * - Session-scope slot components receive the framework standard kit, which
  *   includes `useChat` (the chat snapshot selector hook) and the locale seat.
  *
- * @module dsh-session-cost/client/contract
+ * @module dsh-cost-stats/client/contract
  */
 
 /** One provider/model route that contributed a billed attempt to a turn. */

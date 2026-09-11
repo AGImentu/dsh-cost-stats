@@ -6,7 +6,7 @@
  * compare selector results by identity, so returning a new object on each call
  * would re-render on every stream chunk.
  *
- * @module dsh-session-cost/client/select
+ * @module dsh-cost-stats/client/select
  */
 
 import type {

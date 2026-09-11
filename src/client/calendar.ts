@@ -6,7 +6,7 @@
  * the layout never jumps), month arithmetic across year boundaries, and
  * `YYYY-MM` key parsing.
  *
- * @module dsh-session-cost/client/calendar
+ * @module dsh-cost-stats/client/calendar
  */
 
 import { dayKeyOf } from './stats-model.ts'

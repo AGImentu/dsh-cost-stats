@@ -1,26 +1,28 @@
 {
-  "name": "dsh-session-cost",
-  "version": "0.6.1",
-  "description": "DSH Web plugin: per-turn cost beside the native turn-usage pill, plus a per-reply Cost-stats settings page with calendar day/month pickers, fed by a host route that folds every stored session log. Official DeepSeek price tables (CNY + USD), peak/off-peak aware.",
+  "name": "dsh-cost-stats",
+  "version": "0.7.0",
+  "description": "DSH Web plugin: per-turn cost beside the native turn-usage pill, plus a per-reply Cost-stats settings page with calendar day/month pickers, fed by a host route that folds every stored session log (replies and context compactions alike). Official DeepSeek price tables (CNY + USD), peak/off-peak aware.",
   "type": "module",
   "license": "MIT",
-  "author": "AGImentu <66642334@qq.com>",
+  "author": "AGImentu",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/AGImentu/dsh-session-cost.git"
+    "url": "git+https://github.com/AGImentu/dsh-cost-stats.git"
   },
-  "homepage": "https://github.com/AGImentu/dsh-session-cost#readme",
+  "homepage": "https://github.com/AGImentu/dsh-cost-stats#readme",
   "bugs": {
-    "url": "https://github.com/AGImentu/dsh-session-cost/issues"
+    "url": "https://github.com/AGImentu/dsh-cost-stats/issues"
   },
   "keywords": [
     "deepseek-harness",
     "dsh",
     "dsh-plugin",
     "cost",
+    "cost-stats",
     "usage",
     "pricing",
-    "tokens"
+    "tokens",
+    "billing"
   ],
   "main": "lib/index.js",
   "exports": {

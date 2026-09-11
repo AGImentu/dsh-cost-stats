@@ -20,7 +20,7 @@
  *    price that reply — the panel labels it as a recomputation so the two
  *    numbers are never confused.
  *
- * @module dsh-session-cost/client/CostChip
+ * @module dsh-cost-stats/client/CostChip
  */
 
 import {
@@ -305,7 +305,7 @@ function CostPanel(props: {
       ref={panelRef}
       role="dialog"
       aria-label={tr(estimated ? 'cost.fold.title' : 'cost.title')}
-      data-session-cost-panel
+      data-cost-stats-panel
       className={CLASS.panel}
       style={pos === undefined ? HIDDEN : { left: pos.left, top: pos.top }}
     >

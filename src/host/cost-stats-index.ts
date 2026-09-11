@@ -13,7 +13,7 @@
  * and a session that fails to read is counted as skipped instead of failing the
  * whole response.
  *
- * @module dsh-session-cost/host/session-cost-index
+ * @module dsh-cost-stats/host/cost-stats-index
  */
 
 import { estimateTurnUsage } from '../pricing.ts'
@@ -157,7 +157,7 @@ function compactionRow(
 }
 
 /** Builds and caches the statistics payload. */
-export class SessionCostIndex {
+export class CostStatsIndex {
   private cached: { readonly at: number; readonly payload: UsagePayload } | undefined
   private inFlight: Promise<UsagePayload> | undefined
 

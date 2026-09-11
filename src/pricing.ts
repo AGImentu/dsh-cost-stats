@@ -18,7 +18,7 @@
  *   and routed to V4.1-Flash (Flash price) from that instant onward, until a
  *   future V4.1 Pro ships.
  *
- * @module dsh-session-cost/pricing
+ * @module dsh-cost-stats/pricing
  */
 
 /** Currencies the official tables are published in. */

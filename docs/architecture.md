@@ -7,7 +7,7 @@
 
 | 产物 | 形态 | 契约要点 |
 |---|---|---|
-| `lib/index.js` | Node ESM cordis 插件 | ① 成为一行 **live Loader row**(浏览器半边的唯一到达手段);② 注册 `GET /session-cost/usage`,给统计页与胶囊兜底提供数据 |
+| `lib/index.js` | Node ESM cordis 插件 | ① 成为一行 **live Loader row**(浏览器半边的唯一到达手段);② 注册 `GET /cost-stats/usage`,给统计页与胶囊兜底提供数据 |
 | `lib/client.js` | 浏览器 **classic script + CJS 闭包工厂** | `window.__ModuleLoader__.load({ id: <包名>, factory: (require) => { ... return module.exports } })` |
 
 ### 为什么必须挂一行 host entry
@@ -100,7 +100,7 @@
 持久化会话日志($DSH_HOME/sessions/**)
    └─> host:ctx.sessionPersistence.list() → open(id,'read') → handle.read()
          └─> host/turn-fold.ts:事件 → 每次回复 + 每次压缩(窗口 / 模型 / 分档 token)
-               └─> pricing.estimateTurnUsage(...) → GET /session-cost/usage(JSON,TTL 缓存)
+               └─> pricing.estimateTurnUsage(...) → GET /cost-stats/usage(JSON,TTL 缓存)
                      └─> client:fetch → stats-model(日/月键 + 合计 + 分页)→ StatsSection
 ```
 
