@@ -7,16 +7,16 @@
 
 | 产物 | 形态 | 契约要点 |
 |---|---|---|
-| `lib/index.js` | Node ESM cordis 插件(**故意空实现**) | 它的存在是为了成为一行 **live Loader row**;`dsh-client-modules` 只扫描"配置树里实际挂载了"的 row |
+| `lib/index.js` | Node ESM cordis 插件 | ① 成为一行 **live Loader row**(浏览器半边的唯一到达手段);② 注册 `GET /session-cost/usage`,给统计页与胶囊兜底提供数据 |
 | `lib/client.js` | 浏览器 **classic script + CJS 闭包工厂** | `window.__ModuleLoader__.load({ id: <包名>, factory: (require) => { ... return module.exports } })` |
 
-### 为什么 host 半边是空的
+### 为什么必须挂一行 host entry
 
 `dsh-client-modules` 的 node 半边会遍历 live Loader entries,按 entry 的解析位置找到最近归属的
 `package.json`,读它的 `dsh.client` 声明,把 `lib/client.js` 编进浏览器的 boot graph。
 
-因此挂载一行 host entry 是**唯一**让浏览器半边到达的手段,而这一行本身不需要做任何事:
-本插件不提供 host 服务、不进会话循环、不注册路由。真正的功能全在浏览器里,读的是聊天 UI 已经拿到的用量。
+所以挂载一行 host entry 是**唯一**让浏览器半边到达的手段。这一行同时承担了本插件唯一需要
+宿主能力的地方:读取持久化会话日志。它不进会话循环、不订阅任何事件、不改任何状态。
 
 ### 清单字段(必须与 builder 一致)
 
@@ -72,9 +72,23 @@
 ```
 供应商 usage ──> token-meter 投影(分档,精确)
       └─> 客户端 chat 节点:TurnTailChatData.tokenUsage(+ routes:[{provider,model}])
-              └─> 本插件:useChat(选择器)→ selectTurnUsage / selectTurnLocation
-                        └─> pricing.estimateTurnUsage(...) → 胶囊 + 明细面板
+              └─> 本插件:useChat(选择器)→ selectTurnUsage / selectTurnLocation / selectTurnNumber
+                        ├─(有 tokenUsage)─> pricing.estimateTurnUsage(...) → 胶囊 + 明细面板
+                        └─(没有 tokenUsage)─> usage-store(宿主路由) → 按 会话+回合号 取行
+                                  └─> 同一套 estimateTurnUsage(...) → 胶囊(标题标注「按日志重算」)
 ```
+
+**两条路径,先官方后兜底。** 核心的回合用量折算是「全有或全无」的:
+`packages/llm/token-meter/src/turn-usage.ts` 只要遇到一次没有回报 `usage` 的尝试
+(典型场景:请求失败 → `llm/retry` → 重试成功)、或发现 `turn/end` 之后还有事件,
+就把整个回合的 `tokenUsage` 判为 `undefined`;`TurnTailNodeView` 用
+`data.tokenUsage !== undefined` 决定是否渲染官方「用量」胶囊,所以**官方胶囊会整块消失**。
+
+插件读的是同一个字段,因此同样会消失。选择**不改内核**、只在插件侧补:
+`usage-store.ts` 用一条同源请求(30 秒 TTL、并发合并)拿到宿主折叠出的逐条回复,
+按 `sessionId + turn` 精确定位本回合,再用**同一个** `estimateTurnUsage` 算价。
+所以两条路径的数字口径一致,差别只在数据来源,并且回退值在标题(`cost.fold.title`)
+与浮层备注(`cost.note.fold`)里都写明是重算值。
 
 ### 3.2 统计页(逐次回复,来自持久化日志)
 
@@ -103,6 +117,11 @@
   快照选择器按引用比较,返回新对象会导致每个流式 chunk 都重渲染。
 - 会话累计在**面板**里折叠(`collectLoadedTurns` + `useMemo`,依赖 `snapshot.order` 的引用变化),
   不在胶囊的每次渲染里做,避免流式期间的无谓开销。
+- **回合号也走选择器**(`selectTurnNumber`):它只在 `tokenUsage` 缺失时被用到,
+  但必须与 `tokenUsage` 用同一套节点匹配规则,否则兜底会取错回合。
+- `usage-store` 的快照引用只在发布时变化,所以 `useSyncExternalStore` 不会因每次渲染而重订阅;
+  订阅与请求都在 `FoldChip` 这个**只在官方路径没算出价时才挂载**的子组件里 ——
+  因此正常情况下(绝大多数回合)胶囊完全不接触这条链路,也不会因为兜底数据到达而重渲染。
 
 ## 4. 设计取舍
 
@@ -120,6 +139,8 @@
 | 宿主路由带 **TTL 缓存 + 并发去重 + 会话上限** | 每次请求都读全部日志太贵;缓存 20s、并发共享一次构建、只读最近 120 个非空会话,兼顾新鲜度与开销 |
 | 导航文案用 **label thunk** + 监听 `locale/change` | 契约规定 label 由注册方本地化、shell 每次渲染重新求值;这样语言切换不需要重新注册,插件也不用订阅 locale 状态 |
 | 没有设置项(v1–v3) | 价目表随代码走,升级即更新;少一层状态持久化 |
+| 官方用量缺失时**插件侧兜底**,不动内核 | 内核那条 `tokenUsage` 置空规则有它的道理(它只肯给"能证明"的总量),改它等于改官方语义与官方胶囊。插件侧兜底把"少一个胶囊"变成"多一个标注过的估算",且官方数据在时永远优先。代价:多一条同源请求(有 TTL 与并发合并),以及两条路径必须在 UI 上可区分(标题/备注已区分) |
+| 兜底按 `sessionId + turn` 取行,不按时间或顺序 | 时间戳可能相同、回复数未必连续;只有"会话 + 回合号"是稳定键,取错行的代价比不显示更高 |
 
 ## 5. DSH 升级时检查这 9 处
 
@@ -127,7 +148,8 @@
 
 1. `packages/client/web/src/platform.ts` 的 `PLATFORM_MODULES` —— 与 `tsdown.config.ts` 里的同名常量保持一致;
 2. `ui-chat` 的 `SlotMap` 中 `conversation.chat.assistant-actions` 是否仍为 list/session/`{messageId}`;
-3. `TurnTailChatData.tokenUsage`(`TurnTokenUsage` 的分档字段与 `routes`);
+3. `TurnTailChatData.tokenUsage`(`TurnTokenUsage` 的分档字段与 `routes`)**与 `turn`**
+   —— 兜底路径要在没有 `tokenUsage` 的情况下仍能读到回合号;
 4. `TurnTailChatData.closing.finalNode.messageId`(选择器的匹配键);
 5. `ui-settings` 的 `SlotMap` 中 `settings.section` 是否仍为 list/`root`,以及 register 选项里的 `label`(可为 thunk)语义。
 
@@ -150,6 +172,7 @@
 | 计费纯函数 | `vitest`(`tests/pricing.spec.ts`) | 别名/改路规则、高峰窗口边界(含 12:00、周末、跨时区)、三档金额、混用模型、无路由不猜 |
 | 日志折叠 | `vitest`(`tests/turn-fold.spec.ts`) | 头部/标题、回合窗口、多尝试累加、`message.source` 优先与 `model/selection` 回退、非法用量整条丢弃、无人认领的 usage、`assistant/attempt` 重试、未知事件容错 |
 | 统计模型 | `vitest`(`tests/stats-model.spec.ts`) | 日/月键与分桶、按桶筛选、合计(回复数/会话数/子代理/未计价/金额/用量)、空选择返回 0 |
-| 产物契约 | `node scripts/smoke-client-bundle.mjs` | bundle 注册 id = 包名、工厂返回 `inject`/`apply`、两个插槽各注册一项、导航 label 非空、**两个条目的渲染抛错都被隔离成 null**、胶囊对真实分档算出 `≈¥5`、无路由不渲染、统计页发起宿主请求 |
+| 兜底缓存 | `vitest`(`tests/usage-store.spec.ts`) | 并发三次只发一次请求、TTL 内复用 / 过期重取、`?refresh=1`、失败保留旧数据并记录错误、非 2xx 视为错误、按 `会话+回合` 查找(不串会话)、订阅与退订 |
+| 产物契约 | `node scripts/smoke-client-bundle.mjs` | bundle 注册 id = 包名、工厂返回 `inject`/`apply`、两个插槽各注册一项、导航 label 非空、**两个条目的渲染抛错都被隔离成 null**、胶囊对真实分档算出 `≈¥5`、无路由不渲染、统计页发起宿主请求、**官方用量缺失时首屏不渲染 → 兜底拿到数据后渲染 `≈¥5` → 标题标注为「按日志重算」→ 不借用其他会话的行** |
 | 独立复算 | `node scripts/verify-balance.mjs` | 绕过宿主直读日志复算全部会话累计,并与 API 余额的差值对账(2026-09-11 实测 Δ$0.249 vs 余额 Δ$0.25) |
 | 真机 | 手动 | 重启 `dsh web` + 硬刷新:核对胶囊与原生用量弹窗的分档一致性、统计页逐条明细与合计 |

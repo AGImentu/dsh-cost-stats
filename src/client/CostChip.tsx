@@ -8,19 +8,33 @@
  * priced (no usage yet, no route attribution, or a model with no published
  * price), so it never invents a number.
  *
+ * Two sources feed it, in this order:
+ *
+ * 1. The provider-reported buckets the chat snapshot already carries. This is the
+ *    normal path and it costs nothing.
+ * 2. The plugin's host fold, read through {@link usageStore}, used only when
+ *    path 1 has nothing to show. DSH's core meter is all-or-nothing: one retried
+ *    request that reported no usage erases the whole turn's `tokenUsage`, so the
+ *    native pill and the exact chip both disappear even though the turn did
+ *    bill tokens. The host fold reads the durable log directly and can still
+ *    price that reply — the panel labels it as a recomputation so the two
+ *    numbers are never confused.
+ *
  * @module dsh-session-cost/client/CostChip
  */
 
 import {
-  useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState,
+  useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore,
   type CSSProperties, type ReactNode,
 } from 'react'
 import { createPortal } from 'react-dom'
 import { estimateTurnUsage, formatExactTokens, formatMoney, type TurnEstimate } from '../pricing.ts'
+import type { TurnCostRow } from '../rows.ts'
 import type { CostChipProps, Translator, TurnTokenUsage, UseChatLike } from './contract.ts'
 import { fallbackTranslator } from './locales.ts'
 import { CLASS } from './styles.ts'
-import { collectLoadedTurns, selectTurnLocation, selectTurnUsage, turnWindowOf, type LoadedTurn } from './select.ts'
+import { collectLoadedTurns, selectTurnLocation, selectTurnNumber, selectTurnUsage, turnWindowOf, type LoadedTurn } from './select.ts'
+import { usageStore } from './usage-store.ts'
 
 /** Selector hook stand-in used when the host hands none down (defensive). */
 const NO_CHAT: UseChatLike = () => undefined as never
@@ -53,6 +67,28 @@ function cacheHitLabel(usage: TurnTokenUsage): string | undefined {
   const prompt = usage.totalTokens - usage.outputTokens
   if (!(prompt > 0)) return undefined
   return `${((cacheRead / prompt) * 100).toFixed(1)}%`
+}
+
+/**
+ * Rebuild the chat-shaped usage object for one host-folded reply.
+ *
+ * The panel prices from a `TurnTokenUsage`, so the fallback hands it the same
+ * shape instead of a second, parallel renderer: identical itemization, one code
+ * path. The host row's `tokens` is uncached + cache-read + output, matching the
+ * contract's `totalTokens`.
+ * @param row - one reply row from the host payload.
+ * @returns the usage object, or undefined when the reply has no route to price.
+ */
+function usageFromRow(row: TurnCostRow): TurnTokenUsage | undefined {
+  if (row.provider === undefined || row.model === undefined) return undefined
+  return {
+    uncachedInputTokens: row.uncachedInputTokens,
+    outputTokens: row.outputTokens,
+    totalTokens: row.tokens,
+    cacheReadTokens: row.cacheReadTokens,
+    ...(row.reasoningTokens > 0 ? { reasoningTokens: row.reasoningTokens } : {}),
+    routes: [{ provider: row.provider, model: row.model }],
+  }
 }
 
 /**
@@ -137,8 +173,10 @@ function PanelBody(props: {
   usage: TurnTokenUsage
   tr: Translator
   useChat?: UseChatLike | undefined
+  /** `true` when the numbers come from the host fold instead of the chat store. */
+  estimated?: boolean
 }): ReactNode {
-  const { estimate, usage, tr, useChat } = props
+  const { estimate, usage, tr, useChat, estimated = false } = props
   const { cny, usd } = estimate
   const hit = cacheHitLabel(usage)
   const reasoning = usage.reasoningTokens
@@ -147,7 +185,7 @@ function PanelBody(props: {
       <div className={CLASS.title}>
         <span className={CLASS.titleLabel}>
           <CostIcon />
-          {tr('cost.title')}
+          {tr(estimated ? 'cost.fold.title' : 'cost.title')}
         </span>
         <span className={CLASS.titleValue}>{`≈${formatMoney(cny.total, 'CNY')}`}</span>
       </div>
@@ -190,6 +228,7 @@ function PanelBody(props: {
       </div>
       <SessionTotal tr={tr} useChat={useChat} />
       <div className={CLASS.note}>
+        {estimated && (<>{tr('cost.note.fold')}<br /></>)}
         {tr('cost.note.estimate')}
         <br />
         {tr('cost.note.excluded')}
@@ -214,9 +253,11 @@ function CostPanel(props: {
   tr: Translator
   anchor: HTMLElement | null
   useChat?: UseChatLike | undefined
+  /** `true` when the numbers come from the host fold instead of the chat store. */
+  estimated?: boolean
   onClose: () => void
 }): ReactNode {
-  const { estimate, usage, tr, anchor, useChat, onClose } = props
+  const { estimate, usage, tr, anchor, useChat, estimated = false, onClose } = props
   const panelRef = useRef<HTMLDivElement | null>(null)
   const [pos, setPos] = useState<{ left: number; top: number } | undefined>(undefined)
 
@@ -263,37 +304,40 @@ function CostPanel(props: {
     <div
       ref={panelRef}
       role="dialog"
-      aria-label={tr('cost.title')}
+      aria-label={tr(estimated ? 'cost.fold.title' : 'cost.title')}
       data-session-cost-panel
       className={CLASS.panel}
       style={pos === undefined ? HIDDEN : { left: pos.left, top: pos.top }}
     >
-      <PanelBody estimate={estimate} usage={usage} tr={tr} useChat={useChat} />
+      <PanelBody estimate={estimate} usage={usage} tr={tr} useChat={useChat} estimated={estimated} />
     </div>,
     document.body,
   )
 }
 
 /**
- * Cost chip entry of the assistant action row.
- * @param props - message identity, chat selector hook, and locale translator.
- * @returns the chip, or null when this turn cannot be priced.
+ * Trigger and panel, shared by both data sources.
+ *
+ * Owns the open/closed state and the anchor, so neither source duplicates the
+ * markup. `estimated` only changes the copy (title and note), never the
+ * arithmetic, so a reader can always tell a provider-reported total from a
+ * recomputed one.
+ * @param props - the money label, the estimate, the buckets behind it, and the seats.
+ * @returns the chip and, while open, its panel.
  */
-export function CostChip({ messageId, useChat, t }: CostChipProps): ReactNode {
-  const select = useChat ?? NO_CHAT
-  const tr = t ?? fallbackTranslator
-  const usage = select(snapshot => selectTurnUsage(snapshot, messageId))
-  const location = select(snapshot => selectTurnLocation(snapshot, messageId))
-  const estimate = useMemo(
-    () => (usage === undefined ? undefined : estimateTurnUsage(usage, turnWindowOf(location))),
-    [usage, location],
-  )
+function ChipSurface(props: {
+  amount: string
+  label: string
+  priced: TurnEstimate
+  buckets: TurnTokenUsage
+  estimated: boolean
+  tr: Translator
+  useChat?: UseChatLike | undefined
+}): ReactNode {
+  const { amount, label, priced, buckets, estimated, tr, useChat } = props
   const [open, setOpen] = useState(false)
   const triggerRef = useRef<HTMLButtonElement | null>(null)
   const close = useCallback((): void => { setOpen(false) }, [])
-
-  if (usage === undefined || estimate === undefined || estimate.unpricedModels.length > 0) return null
-  const amount = formatMoney(estimate.cny.total, 'CNY')
   return (
     <span className={CLASS.root}>
       <button
@@ -302,7 +346,7 @@ export function CostChip({ messageId, useChat, t }: CostChipProps): ReactNode {
         className={CLASS.trigger}
         aria-haspopup="dialog"
         aria-expanded={open}
-        title={tr('cost.title')}
+        title={label}
         onClick={() => { setOpen(value => !value) }}
       >
         <CostIcon />
@@ -310,14 +354,94 @@ export function CostChip({ messageId, useChat, t }: CostChipProps): ReactNode {
       </button>
       {open && (
         <CostPanel
-          estimate={estimate}
-          usage={usage}
+          estimate={priced}
+          usage={buckets}
           tr={tr}
           anchor={triggerRef.current}
           useChat={useChat}
+          estimated={estimated}
           onClose={close}
         />
       )}
     </span>
+  )
+}
+
+/**
+ * Fallback chip: the host fold's price for a reply the core meter withheld.
+ *
+ * Mounted only when the exact path has nothing, so a reply the core meter is
+ * happy with never subscribes to the store and never re-renders when a payload
+ * lands. Renders nothing until (and unless) the payload carries this reply.
+ * @param props - the reply's address, the locale seat, and the chat hook.
+ * @returns the chip, or null.
+ */
+function FoldChip(props: {
+  sessionId?: string | undefined
+  turn?: number | undefined
+  tr: Translator
+  useChat?: UseChatLike | undefined
+}): ReactNode {
+  const { sessionId, turn, tr, useChat } = props
+  const snapshot = useSyncExternalStore(usageStore.subscribe, usageStore.getSnapshot, usageStore.getSnapshot)
+  useEffect(() => { usageStore.ensure() }, [])
+  const row = useMemo(
+    () => usageStore.lookup(sessionId, turn),
+    [sessionId, turn, snapshot],
+  )
+  const folded = useMemo(() => {
+    if (row === undefined) return undefined
+    const buckets = usageFromRow(row)
+    if (buckets === undefined) return undefined
+    const priced = estimateTurnUsage(buckets, { startMs: row.at, endMs: row.at })
+    if (priced === undefined || priced.unpricedModels.length > 0) return undefined
+    return { buckets, priced }
+  }, [row])
+  if (folded === undefined) return null
+  return (
+    <ChipSurface
+      amount={formatMoney(folded.priced.cny.total, 'CNY')}
+      label={tr('cost.fold.title')}
+      priced={folded.priced}
+      buckets={folded.buckets}
+      estimated
+      tr={tr}
+      useChat={useChat}
+    />
+  )
+}
+
+/**
+ * Cost chip entry of the assistant action row.
+ *
+ * The chat store is tried first; the host fold is a child component that renders
+ * only when the store could not price this reply at all, so the common path
+ * stays exactly what it was before the fallback existed.
+ * @param props - message identity, current session, chat selector hook, and translator.
+ * @returns the chip, or null when neither source can price this turn.
+ */
+export function CostChip({ messageId, sessionId, useChat, t }: CostChipProps): ReactNode {
+  const select = useChat ?? NO_CHAT
+  const tr = t ?? fallbackTranslator
+  const usage = select(snapshot => selectTurnUsage(snapshot, messageId))
+  const location = select(snapshot => selectTurnLocation(snapshot, messageId))
+  const turn = select(snapshot => selectTurnNumber(snapshot, messageId))
+  const estimate = useMemo(
+    () => (usage === undefined ? undefined : estimateTurnUsage(usage, turnWindowOf(location))),
+    [usage, location],
+  )
+  if (usage === undefined || estimate === undefined || estimate.unpricedModels.length > 0) {
+    return <FoldChip sessionId={sessionId} turn={turn} tr={tr} useChat={useChat} />
+  }
+  return (
+    <ChipSurface
+      amount={formatMoney(estimate.cny.total, 'CNY')}
+      label={tr('cost.title')}
+      priced={estimate}
+      buckets={usage}
+      estimated={false}
+      tr={tr}
+      useChat={useChat}
+    />
   )
 }

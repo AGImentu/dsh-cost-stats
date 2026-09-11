@@ -21,7 +21,9 @@
  * Behavior
  *  5. the chip prices a real turn from a mirrored snapshot and renders nothing
  *     without route attribution;
- *  6. the stats page renders its query switch and fetches the plugin host route.
+ *  6. the stats page renders its query switch and fetches the plugin host route;
+ *  7. when the core store WITHHOLDS a turn's usage, the chip prices that reply
+ *     from the host fold instead and labels the number as recomputed.
  *
  * React is stubbed with a miniature element renderer: this checks the plugin's
  * own contract, not React's behavior. Run `pnpm run build` first.
@@ -70,6 +72,9 @@ const reactStub = {
   useMemo: (fn) => fn(),
   useRef: (value) => ({ current: value }),
   useState: (value) => [value, () => {}],
+  // The store publishes a new snapshot object per change; this stub re-reads it
+  // on every render, which is what a re-render after a publish would do.
+  useSyncExternalStore: (_subscribe, getSnapshot) => getSnapshot(),
 }
 const jsxStub = {
   jsx: (type, props, key) => ({ type, props: props ?? {}, key }),
@@ -106,6 +111,36 @@ function collectText(node) {
   return collectText(node.props?.children)
 }
 
+/** Collect one prop's values from every element in a stub tree (attributes). */
+function collectProp(node, key) {
+  if (node === null || typeof node !== 'object') return []
+  if (Array.isArray(node)) return node.flatMap(child => collectProp(child, key))
+  const own = key in (node.props ?? {}) ? [node.props[key]] : []
+  return [...own, ...collectProp(node.props?.children, key)]
+}
+
+/** One reply row for the host-fold fallback, priced off-peak Flash: ¥5. */
+const foldRow = {
+  sessionId: 's1',
+  sessionTitle: 'folded session',
+  subagent: false,
+  turn: 7,
+  at: Date.UTC(2026, 8, 14, 5, 0, 0),
+  provider: 'deepseek-official',
+  model: 'deepseek-flash',
+  plan: 'DeepSeek-V4.1-Flash',
+  priced: true,
+  cny: 5,
+  usd: 0.694,
+  uncachedInputTokens: 1_000_000,
+  cacheReadTokens: 0,
+  outputTokens: 1_000_000,
+  reasoningTokens: 0,
+  tokens: 2_000_000,
+  attempts: 2,
+}
+const usagePayload = { generatedAt: foldRow.at, stored: 1, read: 1, skipped: 0, rows: [foldRow] }
+
 const loaded = []
 const styleTags = []
 const fetched = []
@@ -123,7 +158,12 @@ const sandbox = {
   String,
   fetch: (url) => {
     fetched.push(String(url))
-    return Promise.resolve({ ok: false, status: 503, statusText: 'stub', json: async () => ({}) })
+    return Promise.resolve({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      json: async () => usagePayload,
+    })
   },
   document: {
     querySelector: () => null,
@@ -251,6 +291,32 @@ check('stats page offers a day picker and a month picker',
   statsText.includes('选择日期') && statsText.includes('选择月份'))
 check(`stats page fetches the plugin host route (got ${JSON.stringify(fetched)})`,
   fetched.includes('/session-cost/usage'))
+
+// 7. Fallback path: core withheld the turn's usage, the host fold still prices it.
+const withheldNode = {
+  kind: 'turn-tail',
+  // No `tokenUsage`: exactly the shape a turn with an unusable attempt produces.
+  data: { turn: 7, closing: { finalNode: { messageId: 'm7' } } },
+  location: { turn: { start: { time: foldRow.at }, end: { time: foldRow.at + 1_000 } } },
+}
+const withheldProps = {
+  messageId: 'm7',
+  sessionId: 's1',
+  useChat: (selector) => selector(snapshotOf(withheldNode)),
+  t: undefined,
+}
+const firstPass = renderTree(chipEntry.component(withheldProps))
+check('chip renders nothing on the first pass, while the fold is unfetched', firstPass === null)
+
+await new Promise((resolve) => { setTimeout(resolve, 20) })
+const secondPass = renderTree(chipEntry.component(withheldProps))
+const fallbackText = collectText(secondPass).join(' ')
+check(`chip prices the withheld turn from the host fold (got "${fallbackText}")`, fallbackText.includes('≈¥5'))
+check('the fallback chip is labelled as recomputed, not as the official total',
+  collectProp(secondPass, 'title').includes('本回合费用（按日志重算）'))
+
+const otherSession = renderTree(chipEntry.component({ ...withheldProps, sessionId: 's9' }))
+check('the fallback never borrows another session\'s reply', otherSession === null)
 
 if (failures.length > 0) {
   console.error(`smoke: ${failures.length} check(s) failed`)

@@ -18,6 +18,7 @@ export const NS = 'session-cost'
 export const zh: Readonly<Record<string, string>> = {
   'cost.chip': '≈{amount}',
   'cost.title': '本回合费用',
+  'cost.fold.title': '本回合费用（按日志重算）',
   'cost.model': '计费模型',
   'cost.requested': '请求模型',
   'cost.window': '计费时段',
@@ -34,6 +35,7 @@ export const zh: Readonly<Record<string, string>> = {
   'cost.sessionTurns': '已加载 {turns} 回合',
   'cost.perMillion': '×{rate}/M',
   'cost.note.estimate': '为按官方价目表计算的估算值，非账单金额。',
+  'cost.note.fold': '官方用量统计未给出本回合（该回合含未回报用量的重试请求），此数由插件重算会话日志得出；日志同样缺少的那部分用量会让此数偏低。',
   'cost.note.mixed': '本回合混用了多个计费模型，按其中最高价估算上界。',
   'cost.note.straddle': '本回合跨越了高峰/空闲切换点，按回合起始时刻计价。',
   'cost.note.alias': '该模型名已下线，请求由 {label} 提供并按此计价。',
@@ -75,6 +77,7 @@ export const zh: Readonly<Record<string, string>> = {
 export const en: Readonly<Record<string, string>> = {
   'cost.chip': '≈{amount}',
   'cost.title': 'Turn cost',
+  'cost.fold.title': 'Turn cost (recomputed from the log)',
   'cost.model': 'Billed model',
   'cost.requested': 'Requested model',
   'cost.window': 'Rate window',
@@ -91,6 +94,7 @@ export const en: Readonly<Record<string, string>> = {
   'cost.sessionTurns': '{turns} turns loaded',
   'cost.perMillion': '×{rate}/M',
   'cost.note.estimate': 'Estimated from the official price table; not an invoice.',
+  'cost.note.fold': 'The official usage meter withheld this turn (it contains a retried request that reported no usage), so the plugin recomputed it from the durable session log; the same missing usage makes this number a lower bound.',
   'cost.note.mixed': 'This turn mixed billing models; priced with the costliest one as an upper bound.',
   'cost.note.straddle': 'This turn crossed a peak/off-peak boundary; priced at its start.',
   'cost.note.alias': 'This model id is retired; requests are served by {label} and billed at its rate.',

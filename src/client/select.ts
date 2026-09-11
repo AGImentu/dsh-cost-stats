@@ -54,6 +54,20 @@ export function selectTurnLocation(
   return tailNodeFor(snapshot, messageId)?.location?.turn
 }
 
+/**
+ * Select one turn's number.
+ *
+ * Read even when `tokenUsage` is absent: the number is what lets the chip fall
+ * back to the host's log fold for a turn whose core usage was withheld.
+ * @param snapshot - current chat snapshot.
+ * @param messageId - durable assistant message id.
+ * @returns the turn number, or undefined while unavailable.
+ */
+export function selectTurnNumber(snapshot: ChatSnapshotLike, messageId: string): number | undefined {
+  const data = tailNodeFor(snapshot, messageId)?.data as TurnTailData | undefined
+  return typeof data?.turn === 'number' ? data.turn : undefined
+}
+
 /** One loaded turn with the usage this plugin prices. */
 export interface LoadedTurn {
   readonly turn: number

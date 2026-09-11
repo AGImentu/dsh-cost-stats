@@ -93,6 +93,11 @@ export type Translator = (key: string, vars?: Readonly<Record<string, string | n
 export interface CostChipProps {
   /** Durable assistant message this action row belongs to. */
   readonly messageId: string
+  /**
+   * Current session id (a session-scope standard seat). Read only by the
+   * fallback path, to address one reply inside the host's payload.
+   */
+  readonly sessionId?: string
   /** Chat snapshot selector hook from the framework standard kit. */
   readonly useChat?: UseChatLike
   /** Locale translator for this plugin's namespace. */
