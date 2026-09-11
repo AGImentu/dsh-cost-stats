@@ -21,7 +21,8 @@
  * Behavior
  *  5. the chip prices a real turn from a mirrored snapshot and renders nothing
  *     without route attribution;
- *  6. the stats page renders its query switch and fetches the plugin host route;
+ *  6. the stats page renders its query switch, opens on today's replies, and
+ *     fetches the plugin host route;
  *  7. when the core store WITHHOLDS a turn's usage, the chip prices that reply
  *     from the host fold instead and labels the number as recomputed.
  *
@@ -71,7 +72,9 @@ const reactStub = {
   useLayoutEffect: (fn) => { fn() },
   useMemo: (fn) => fn(),
   useRef: (value) => ({ current: value }),
-  useState: (value) => [value, () => {}],
+  // React accepts either a value or a lazy initializer; a single-pass renderer
+  // must honor both and then ignore updates.
+  useState: (initial) => [typeof initial === 'function' ? initial() : initial, () => {}],
   // The store publishes a new snapshot object per change; this stub re-reads it
   // on every render, which is what a re-render after a publish would do.
   useSyncExternalStore: (_subscribe, getSnapshot) => getSnapshot(),
@@ -287,8 +290,13 @@ check('chip renders nothing without route attribution', unpricedChip === null)
 // 6. Stats page: renders the calendar pickers and asks the host for its payload.
 const statsText = collectText(renderTree(statsEntry.component({ t: undefined }))).join(' ')
 check(`stats page renders its heading (got "${statsText.slice(0, 40)}")`, statsText.includes('费用统计'))
-check('stats page offers a day picker and a month picker',
-  statsText.includes('选择日期') && statsText.includes('选择月份'))
+const nowDate = new Date()
+const pad2 = (value) => String(value).padStart(2, '0')
+const todayKey = `${String(nowDate.getFullYear())}-${pad2(nowDate.getMonth() + 1)}-${pad2(nowDate.getDate())}`
+check('stats page offers a day field and a month picker',
+  statsText.includes(todayKey) && statsText.includes('选择月份'))
+check(`stats page opens on today's replies (field shows ${todayKey}, got "${statsText.slice(0, 60)}")`,
+  statsText.includes(todayKey))
 check(`stats page fetches the plugin host route (got ${JSON.stringify(fetched)})`,
   fetched.includes('/session-cost/usage'))
 

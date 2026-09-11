@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { dayKeyOf, monthKeyOf, totalsOf } from '../src/client/stats-model.ts'
+import { dayKeyOf, monthKeyOf, paginate, totalsOf } from '../src/client/stats-model.ts'
 import type { TurnCostRow } from '../src/rows.ts'
 
 /** Local wall-clock instant, so day/month keys are timezone-independent. */
@@ -63,5 +63,35 @@ describe('totalsOf', () => {
 
   it('reports an empty selection as zeroes rather than undefined', () => {
     expect(totalsOf([])).toMatchObject({ replies: 0, sessions: 0, cny: 0, usd: 0, tokens: 0 })
+  })
+})
+
+describe('paginate', () => {
+  const rows = Array.from({ length: 45 }, (_value, index) => index)
+
+  it('cuts the requested page into rows-per-page slices', () => {
+    expect(paginate(rows, 1, 20)).toEqual({ page: 1, pages: 3, rows: rows.slice(0, 20) })
+    expect(paginate(rows, 2, 20)).toEqual({ page: 2, pages: 3, rows: rows.slice(20, 40) })
+    expect(paginate(rows, 3, 20)).toEqual({ page: 3, pages: 3, rows: rows.slice(40, 45) })
+  })
+
+  it('clamps a page that a shrunken selection left out of range', () => {
+    expect(paginate(rows.slice(0, 5), 3, 20)).toEqual({ page: 1, pages: 1, rows: rows.slice(0, 5) })
+    expect(paginate(rows.slice(0, 21), 9, 20)).toEqual({ page: 2, pages: 2, rows: rows.slice(20, 21) })
+  })
+
+  it('treats a non-positive or fractional page as the first page', () => {
+    expect(paginate(rows, 0, 20).page).toBe(1)
+    expect(paginate(rows, -4, 20).page).toBe(1)
+    expect(paginate(rows, 1.7, 20).page).toBe(1)
+    expect(paginate(rows, Number.NaN, 20).page).toBe(1)
+  })
+
+  it('always offers one page, even for an empty selection', () => {
+    expect(paginate([], 1, 20)).toEqual({ page: 1, pages: 1, rows: [] })
+  })
+
+  it('never divides by a zero page size', () => {
+    expect(paginate(rows, 1, 0)).toEqual({ page: 1, pages: 45, rows: [0] })
   })
 })

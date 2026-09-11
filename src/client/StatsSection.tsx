@@ -24,11 +24,11 @@ import type { TurnCostRow, UsagePayload } from '../rows.ts'
 import type { CostStatsProps, Translator } from './contract.ts'
 import { fallbackTranslator } from './locales.ts'
 import { DayPicker, MonthPicker } from './Pickers.tsx'
-import { dayKeyOf, monthKeyOf, totalsOf } from './stats-model.ts'
+import { dayKeyOf, monthKeyOf, paginate, totalsOf } from './stats-model.ts'
 import { CLASS } from './styles.ts'
 
-/** Replies rendered at once; the pickers and total still cover every row. */
-const ROW_LIMIT = 300
+/** Replies shown per page; the pickers and the total still cover every row. */
+const PAGE_SIZE = 20
 
 /**
  * Compact token label (1.2M / 345.0K / 812).
@@ -65,10 +65,16 @@ export function CostStatsSection({ t }: CostStatsProps): ReactNode {
   const [payload, setPayload] = useState<UsagePayload | undefined>(undefined)
   const [error, setError] = useState<string | undefined>(undefined)
   const [loading, setLoading] = useState(true)
-  /** `YYYY-MM-DD` day filter; mutually exclusive with `month`. */
-  const [day, setDay] = useState<string | undefined>(undefined)
+  /**
+   * `YYYY-MM-DD` day filter; mutually exclusive with `month`. Defaults to TODAY:
+   * the page opens on the current day's replies, which is what a glance wants,
+   * and the pickers are one click away from any other day or month.
+   */
+  const [day, setDay] = useState<string | undefined>(() => dayKeyOf(Date.now()))
   /** `YYYY-MM` month filter. */
   const [month, setMonth] = useState<string | undefined>(undefined)
+  /** 1-based page inside the current selection. */
+  const [page, setPage] = useState(1)
 
   /**
    * Load the payload from the host route.
@@ -101,9 +107,25 @@ export function CostStatsSection({ t }: CostStatsProps): ReactNode {
     return rows
   }, [rows, day, month])
   const totals = useMemo(() => totalsOf(selected), [selected])
-  const visible = selected.slice(0, ROW_LIMIT)
+  // A selection change or a reload can leave the stored page out of range; the
+  // clamp happens inside `paginate`, so no effect and no extra frame is involved.
+  const { page: current, pages, rows: visible } = paginate(selected, page, PAGE_SIZE)
   const now = Date.now()
   const scope = day ?? month ?? tr('stats.scope.all')
+
+  /** Switch the day filter, dropping the month filter and restarting at page 1. */
+  const pickDay = useCallback((key: string | undefined): void => {
+    setDay(key)
+    if (key !== undefined) setMonth(undefined)
+    setPage(1)
+  }, [])
+
+  /** Switch the month filter, dropping the day filter and restarting at page 1. */
+  const pickMonth = useCallback((key: string | undefined): void => {
+    setMonth(key)
+    if (key !== undefined) setDay(undefined)
+    setPage(1)
+  }, [])
 
   return (
     <div className={CLASS.stats} data-session-cost-stats>
@@ -117,19 +139,19 @@ export function CostStatsSection({ t }: CostStatsProps): ReactNode {
           tr={tr}
           value={day}
           dataDays={dataDays}
-          onPick={(key) => { setDay(key); if (key !== undefined) setMonth(undefined) }}
+          onPick={pickDay}
         />
         <MonthPicker
           tr={tr}
           value={month}
           dataMonths={dataMonths}
-          onPick={(key) => { setMonth(key); if (key !== undefined) setDay(undefined) }}
+          onPick={pickMonth}
         />
         {(day !== undefined || month !== undefined) && (
           <button
             type="button"
             className={CLASS.pickerAction}
-            onClick={() => { setDay(undefined); setMonth(undefined) }}
+            onClick={() => { pickDay(undefined); setMonth(undefined) }}
           >
             {tr('stats.scope.clear')}
           </button>
@@ -175,21 +197,46 @@ export function CostStatsSection({ t }: CostStatsProps): ReactNode {
       )}
 
       {selected.length > 0 && (
-        <table className={CLASS.table}>
-          <thead>
-            <tr>
-              <th className={CLASS.num}>{tr('stats.col.time')}</th>
-              <th>{tr('stats.col.session')}</th>
-              <th className={CLASS.num}>{tr('stats.col.tokens')}</th>
-              <th className={CLASS.num}>{tr('stats.col.cost')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {visible.map(row => (
-              <ReplyRow key={`${row.sessionId}:${String(row.turn)}`} row={row} tr={tr} now={now} />
-            ))}
-          </tbody>
-        </table>
+        <>
+          <table className={CLASS.table}>
+            <thead>
+              <tr>
+                <th>{tr('stats.col.time')}</th>
+                <th>{tr('stats.col.session')}</th>
+                <th>{tr('stats.col.tokens')}</th>
+                <th>{tr('stats.col.cost')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visible.map(row => (
+                <ReplyRow key={`${row.sessionId}:${String(row.turn)}`} row={row} tr={tr} now={now} />
+              ))}
+            </tbody>
+          </table>
+          <div className={CLASS.pager}>
+            <span className={CLASS.pagerInfo}>
+              {tr('stats.page.summary', { page: current, pages, count: selected.length, size: PAGE_SIZE })}
+            </span>
+            <span className={CLASS.pagerActions}>
+              <button
+                type="button"
+                className={CLASS.pagerAction}
+                disabled={current <= 1}
+                onClick={() => { setPage(Math.max(1, current - 1)) }}
+              >
+                {tr('stats.page.prev')}
+              </button>
+              <button
+                type="button"
+                className={CLASS.pagerAction}
+                disabled={current >= pages}
+                onClick={() => { setPage(Math.min(pages, current + 1)) }}
+              >
+                {tr('stats.page.next')}
+              </button>
+            </span>
+          </div>
+        </>
       )}
     </div>
   )
@@ -197,6 +244,10 @@ export function CostStatsSection({ t }: CostStatsProps): ReactNode {
 
 /**
  * One reply row: stamp, session name with tags, tokens, money.
+ *
+ * Money keeps both currencies on one line (the column is the narrowest of the
+ * four, and a stacked second line was what made every row look tall and
+ * top-heavy), and the USD half stays muted so the CNY figure reads first.
  * @param props - the priced row, translator, and the reference instant.
  * @returns the table row.
  */
@@ -204,16 +255,18 @@ function ReplyRow({ row, tr, now }: { row: TurnCostRow, tr: Translator, now: num
   const label = `${row.sessionTitle} · #${String(row.turn)}${row.model === undefined ? '' : ` · ${row.model}`}`
   return (
     <tr>
-      <td className={CLASS.num}>{formatStamp(row.at, now)}</td>
+      <td>{formatStamp(row.at, now)}</td>
       <td className={CLASS.session} title={label}>
         {row.sessionTitle}
         {row.subagent && <span className={CLASS.badge}>{tr('stats.tag.subagent')}</span>}
         {!row.priced && <span className={CLASS.badge}>{tr('stats.tag.unpriced')}</span>}
       </td>
-      <td className={CLASS.num}>{formatTokens(row.tokens)}</td>
-      <td className={CLASS.num}>
+      <td>{formatTokens(row.tokens)}</td>
+      <td className={CLASS.moneyCell}>
         {row.priced ? formatMoney(row.cny, 'CNY') : '—'}
-        <span className={CLASS.moneySub}>{row.priced ? formatMoney(row.usd, 'USD') : (row.model ?? '')}</span>
+        <span className={CLASS.moneyInline}>
+          {row.priced ? formatMoney(row.usd, 'USD') : (row.model ?? '')}
+        </span>
       </td>
     </tr>
   )

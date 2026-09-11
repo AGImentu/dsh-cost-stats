@@ -57,8 +57,13 @@ export const CLASS = {
   statsMetrics: 'dsh-session-cost__statsMetrics',
   metric: 'dsh-session-cost__metric',
   table: 'dsh-session-cost__table',
-  num: 'dsh-session-cost__num',
   session: 'dsh-session-cost__session',
+  moneyCell: 'dsh-session-cost__moneyCell',
+  moneyInline: 'dsh-session-cost__moneyInline',
+  pager: 'dsh-session-cost__pager',
+  pagerInfo: 'dsh-session-cost__pagerInfo',
+  pagerActions: 'dsh-session-cost__pagerActions',
+  pagerAction: 'dsh-session-cost__pagerAction',
   badge: 'dsh-session-cost__badge',
   moneySub: 'dsh-session-cost__moneySub',
   statsNote: 'dsh-session-cost__statsNote',
@@ -483,7 +488,7 @@ export const STYLES = `
   white-space: nowrap;
 }
 
-/* Tables: quiet rows, right-aligned numerics, tappable bucket rows. */
+/* Tables: quiet rows, left-aligned cells, one-line money. */
 .${CLASS.table} {
   width: 100%;
   border-collapse: collapse;
@@ -502,20 +507,16 @@ export const STYLES = `
 }
 
 .${CLASS.table} td {
-  padding: 7px 8px;
+  padding: 6px 8px;
   border-bottom: 0.5px solid var(--dsw-alias-border-l1);
   color: var(--dsw-alias-label-secondary);
-  vertical-align: top;
+  /* Middle, so a taller cell (a tag, a long title) never leaves its
+     neighbours' text floating at the top of the row. */
+  vertical-align: middle;
 }
 
 .${CLASS.table} tbody tr:last-child td {
   border-bottom: none;
-}
-
-.${CLASS.table} th.${CLASS.num},
-.${CLASS.table} td.${CLASS.num} {
-  text-align: right;
-  white-space: nowrap;
 }
 
 .${CLASS.table} th:first-child,
@@ -534,6 +535,57 @@ export const STYLES = `
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--dsw-alias-label-primary);
+}
+
+/* Money column: CNY first, USD beside it, never a second line. */
+.${CLASS.moneyCell} {
+  white-space: nowrap;
+}
+
+.${CLASS.moneyInline} {
+  margin-left: 6px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* Pager under the list: where you are on the left, the two steps on the right. */
+.${CLASS.pager} {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+.${CLASS.pagerActions} {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.${CLASS.pagerAction} {
+  height: 26px;
+  padding: 0 10px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-secondary);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+.${CLASS.pagerAction}:hover:not(:disabled) {
+  border-color: var(--dsw-alias-border-l3);
+  color: var(--dsw-alias-label-primary);
+}
+
+.${CLASS.pagerAction}:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 
 .${CLASS.moneySub} {

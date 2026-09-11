@@ -69,3 +69,33 @@ export function totalsOf(rows: readonly TurnCostRow[]): CostTotals {
   }
   return { replies: rows.length, sessions: sessions.size, unpriced, subagents, cny, usd, tokens }
 }
+
+/** One rendered page of a row selection. */
+export interface PageSlice<T> {
+  /** 1-based page actually rendered, clamped into range. */
+  readonly page: number
+  /** Total number of pages; at least 1, so an empty selection still has a page. */
+  readonly pages: number
+  /** The rows belonging to {@link page}. */
+  readonly rows: readonly T[]
+}
+
+/**
+ * Cut one page out of a row selection.
+ *
+ * Clamping lives here rather than in a state update: a filter change or a reload
+ * can shrink the selection under the stored page number, and deriving the safe
+ * page during render avoids a frame that shows an empty page.
+ * @param rows - the whole selection.
+ * @param page - requested 1-based page.
+ * @param size - rows per page.
+ * @returns the clamped page number, the page count, and that page's rows.
+ */
+export function paginate<T>(rows: readonly T[], page: number, size: number): PageSlice<T> {
+  const perPage = Math.max(1, Math.trunc(size))
+  const pages = Math.max(1, Math.ceil(rows.length / perPage))
+  const requested = Number.isFinite(page) ? Math.trunc(page) : 1
+  const current = Math.min(Math.max(1, requested), pages)
+  const start = (current - 1) * perPage
+  return { page: current, pages, rows: rows.slice(start, start + perPage) }
+}
