@@ -29,11 +29,25 @@
  * @module dsh-cost-stats/host/turn-fold
  */
 
-/** One durable event, narrowed to what the fold reads. */
+/**
+ * One durable event, narrowed to what the fold reads.
+ *
+ * The `session` header carries its fields at the TOP level (`id`, `cwd`,
+ * `createdAt`, `delegationDepth`, `isSeeded`, `parentSession`), unlike every
+ * other event whose payload sits under `data`; both shapes are accepted.
+ */
 export interface DurableEventLike {
   readonly type: string
+  readonly seq?: number
   readonly time?: number
   readonly data?: unknown
+  readonly id?: string
+  readonly cwd?: string
+  readonly createdAt?: number
+  readonly delegationDepth?: number
+  readonly isSeeded?: boolean
+  readonly parentSession?: string
+  readonly origin?: string
 }
 
 /** One billed turn of a session. */
@@ -79,6 +93,10 @@ export interface FoldedSession {
   readonly turns: readonly FoldedTurn[]
   /** Every billed compaction call, in log order. */
   readonly compactions: readonly FoldedCompaction[]
+  /** Whether this log is a fork whose head is a copy of its parent's events. */
+  readonly isSeeded: boolean
+  /** How many leading events were inherited from the parent and skipped. */
+  readonly inheritedEvents: number
 }
 
 /** Whether a value is a non-negative safe integer. */
@@ -138,7 +156,58 @@ function usageBuckets(usage: Record<string, unknown> | undefined):
 }
 
 /**
+ * Read the fields of a `session` header, tolerating both shapes.
+ *
+ * DSH 0.1.5 writes them at the top level of the event; older logs nested them
+ * under `data`. Reading both means one parser covers every log on disk.
+ * @param event - the `session` event.
+ * @returns the header's fields (each possibly absent).
+ */
+function sessionHeader(event: DurableEventLike): Record<string, unknown> {
+  const data = record(event.data) ?? {}
+  return {
+    id: event.id ?? data.id,
+    cwd: event.cwd ?? data.cwd,
+    createdAt: event.createdAt ?? data.createdAt,
+    delegationDepth: event.delegationDepth ?? data.delegationDepth,
+    isSeeded: event.isSeeded ?? data.isSeeded,
+    parentSession: event.parentSession ?? data.parentSession,
+  }
+}
+
+/**
+ * Find the boundary of a fork's inherited prefix.
+ *
+ * A fork (a side thread, a `session.fork`, any seeded start) writes the parent's
+ * events into its own log and then marks the seam with a `session/end-seed`
+ * carrying `data.inherited: true`. Without honouring that seam the parent's
+ * turns are counted a second time here — measured on this machine: one side
+ * thread copied 712 assistant messages, which showed up as three identical rows
+ * per turn on the stats page.
+ *
+ * The inherited marker is preferred; the last seed boundary of any kind is the
+ * fallback, and `undefined` means "seeded but the seam cannot be located".
+ * @param events - the session's events, in seq order.
+ * @returns the last inherited seq, or undefined.
+ */
+function inheritedBoundary(events: readonly DurableEventLike[]): number | undefined {
+  let inherited: number | undefined
+  let anySeed: number | undefined
+  for (const event of events) {
+    if (event.type !== 'session/end-seed') continue
+    if (!isCount(event.seq)) continue
+    anySeed = Math.max(anySeed ?? -1, event.seq)
+    if (record(event.data)?.inherited === true) inherited = Math.max(inherited ?? -1, event.seq)
+  }
+  return inherited ?? anySeed
+}
+
+/**
  * Fold one session's events.
+ *
+ * A seeded log only contributes what happened AFTER its inherited prefix: the
+ * prefix is a copy of the parent session's own log, which is folded separately,
+ * so counting it here would bill the same tokens twice.
  * @param sessionId - fallback id when the header is missing.
  * @param events - the durable events, in seq order.
  * @returns the session with its billable turns and compactions.
@@ -158,6 +227,25 @@ export function foldSessionEvents(
   const compactions: FoldedCompaction[] = []
   let openTurn: number | undefined
 
+  // Read the header first: whether this log is a fork decides how much of it
+  // belongs to this session at all.
+  let isSeeded = false
+  for (const event of events) {
+    if (event.type !== 'session') continue
+    const header = sessionHeader(event)
+    id = text(header.id) ?? id
+    cwd = text(header.cwd) ?? cwd
+    if (isCount(header.createdAt)) createdAt = header.createdAt
+    if (isCount(header.delegationDepth)) delegationDepth = header.delegationDepth
+    isSeeded = header.isSeeded === true
+    break
+  }
+  // A seeded log whose seam cannot be located is not folded at all: its head is
+  // somebody else's history, and a wrong total is worse than a missing one (the
+  // parent session's own log carries those turns).
+  const boundary = isSeeded ? inheritedBoundary(events) : undefined
+  let inheritedEvents = 0
+
   const accumulatorFor = (turn: number, at: number): TurnAccumulator => {
     const existing = turns.get(turn)
     if (existing !== undefined) return existing
@@ -176,17 +264,19 @@ export function foldSessionEvents(
   }
 
   for (const event of events) {
+    if (event.type === 'session') continue
+    if (isSeeded) {
+      // Inherited when the event predates the seam; DSH gives no seq to the
+      // header event, so a boundary of -1 (no seam found) skips everything.
+      const seq = isCount(event.seq) ? event.seq : Number.POSITIVE_INFINITY
+      if (boundary === undefined || seq <= boundary) {
+        inheritedEvents += 1
+        continue
+      }
+    }
     const data = record(event.data)
     const at = isCount(event.time) ? event.time : 0
     switch (event.type) {
-      case 'session': {
-        if (data === undefined) break
-        id = text(data.id) ?? id
-        cwd = text(data.cwd) ?? cwd
-        if (isCount(data.createdAt)) createdAt = data.createdAt
-        if (isCount(data.delegationDepth)) delegationDepth = data.delegationDepth
-        break
-      }
       case 'session/title': {
         if (data === undefined) break
         title = text(data.title) ?? title
@@ -284,5 +374,7 @@ export function foldSessionEvents(
     delegationDepth,
     turns: folded,
     compactions,
+    isSeeded,
+    inheritedEvents,
   }
 }

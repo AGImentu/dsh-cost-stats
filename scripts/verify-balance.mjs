@@ -102,6 +102,8 @@ let sessions = 0
 let unreadable = 0
 let unpriced = 0
 let compactionCount = 0
+let seededSessions = 0
+let inheritedEvents = 0
 const eventHistogram = new Map()
 
 for (const path of logs) {
@@ -124,6 +126,13 @@ for (const path of logs) {
   }
   const session = foldSessionEvents(path, events)
   if (session.turns.length > 0) sessions += 1
+  // A fork's log starts with a copy of its parent's events; those are skipped
+  // (the parent's own log already bills them), and the count is reported so the
+  // suppression stays visible instead of silent.
+  if (session.isSeeded) {
+    seededSessions += 1
+    inheritedEvents += session.inheritedEvents
+  }
   /** Price one billed item with the shipped tables (the same call the host makes). */
   const price = (source, window) => {
     const attributed = source.provider !== undefined && source.model !== undefined
@@ -181,6 +190,7 @@ const sum = (rows) => rows.reduce(
 console.log(`repo        : ${repo}`)
 console.log(`sessions dir: ${sessionsRoot}`)
 console.log(`logs found  : ${logs.length} (folded ${sessions} with turns, unreadable ${unreadable})`)
+console.log(`seeded logs : ${seededSessions} fork(s), ${inheritedEvents} inherited events skipped (their parent bills them)`)
 console.log(`replies     : ${turns.length - compactionCount} priced rows + ${compactionCount} compactions, ${unpriced} unpriced\n`)
 
 console.log('=== per session ===')
