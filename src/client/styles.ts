@@ -53,7 +53,7 @@ export const CLASS = {
   calWeekday: 'dsh-session-cost__calWeekday',
   calCell: 'dsh-session-cost__calCell',
   statsTotal: 'dsh-session-cost__statsTotal',
-  statsTotalMain: 'dsh-session-cost__statsTotalMain',
+  statsTotalRow: 'dsh-session-cost__statsTotalRow',
   statsTotalValue: 'dsh-session-cost__statsTotalValue',
   statsMetrics: 'dsh-session-cost__statsMetrics',
   metric: 'dsh-session-cost__metric',
@@ -453,22 +453,24 @@ export const STYLES = `
   border-top: 0.5px solid var(--dsw-alias-border-l2);
 }
 
-/* Total card: the query's headline number. */
+/* Total card: the query's headline number, then one row of money + metrics. */
 .${CLASS.statsTotal} {
   display: flex;
-  /* Centred, not bottom-aligned: the metrics line is one row of small text and
-     used to hang off the bottom edge, level with the second money line. */
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
+  flex-direction: column;
+  gap: 2px;
   padding: 14px 16px;
   border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 12px;
   background: var(--dsw-alias-bg-layer-1);
 }
 
-.${CLASS.statsTotalMain} {
-  min-width: 0;
+/* Money on the left, the metric line on the right, sharing ONE baseline. */
+.${CLASS.statsTotalRow} {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 16px;
 }
 
 .${CLASS.statsTotalValue} {

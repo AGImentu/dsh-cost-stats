@@ -162,23 +162,24 @@ export function CostStatsSection({ t }: CostStatsProps): ReactNode {
       </div>
 
       <div className={CLASS.statsTotal}>
-        <div className={CLASS.statsTotalMain}>
-          <div className={CLASS.statsSubtitle}>{`${tr('stats.total')} · ${scope}`}</div>
+        <div className={CLASS.statsSubtitle}>{`${tr('stats.total')} · ${scope}`}</div>
+        {/* Money and metrics share one row, so they sit on one baseline. */}
+        <div className={CLASS.statsTotalRow}>
           <div className={CLASS.statsTotalValue}>
             {formatMoney(totals.cny, 'CNY')}
             <span className={CLASS.moneyInline}>{formatMoney(totals.usd, 'USD')}</span>
           </div>
-        </div>
-        <div className={CLASS.statsMetrics}>
-          <span className={CLASS.metric}>{tr('stats.metric.replies')} {totals.replies}</span>
-          <span className={CLASS.metric}>{tr('stats.metric.sessions')} {totals.sessions}</span>
-          <span className={CLASS.metric}>{tr('stats.metric.tokens')} {formatTokens(totals.tokens)}</span>
-          {totals.subagents > 0 && (
-            <span className={CLASS.metric}>{tr('stats.metric.subagents', { count: totals.subagents })}</span>
-          )}
-          {totals.unpriced > 0 && (
-            <span className={CLASS.metric}>{tr('stats.metric.unpriced', { count: totals.unpriced })}</span>
-          )}
+          <div className={CLASS.statsMetrics}>
+            <span className={CLASS.metric}>{tr('stats.metric.replies')} {totals.replies}</span>
+            <span className={CLASS.metric}>{tr('stats.metric.sessions')} {totals.sessions}</span>
+            <span className={CLASS.metric}>{tr('stats.metric.tokens')} {formatTokens(totals.tokens)}</span>
+            {totals.subagents > 0 && (
+              <span className={CLASS.metric}>{tr('stats.metric.subagents', { count: totals.subagents })}</span>
+            )}
+            {totals.unpriced > 0 && (
+              <span className={CLASS.metric}>{tr('stats.metric.unpriced', { count: totals.unpriced })}</span>
+            )}
+          </div>
         </div>
       </div>
 
