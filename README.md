@@ -40,7 +40,7 @@ dsh plugin --profile web add dsh-session-cost
 ### 方式二:从源码/克隆安装(`link:`,便于本地改代码)
 
 ```sh
-git clone https://github.com/<you>/dsh-session-cost && cd dsh-session-cost
+git clone https://github.com/AGImentu/dsh-session-cost && cd dsh-session-cost
 pnpm install
 pnpm run build
 node scripts/install-local.mjs --profile web
@@ -224,9 +224,9 @@ docs/architecture.md      接入契约与设计取舍
 
 ## 🚀 发布到 GitHub / npm(清单)
 
-- [ ] 填 `package.json` 的 `repository`(GitHub 地址)与 `author`
-- [ ] `pnpm run verify` 全绿
-- [ ] `git init && git add -A && git commit -m "feat: dsh-session-cost 0.1.0"`
+- [x] 填 `package.json` 的 `repository`(GitHub 地址)与 `author`
+- [x] `pnpm run verify` 全绿
+- [x] 建仓并推送 → <https://github.com/AGImentu/dsh-session-cost>(`main`)
 - [ ] (可选)发布 npm:`pnpm publish --access public`(包名 `dsh-session-cost` 需可用)
 - [ ] (可选)给仓库打 `dsh-plugin` / `deepseek-harness` topic,便于被发现
 - [ ] 价目表变化时更新 `src/pricing.ts` 与 `tests/pricing.spec.ts`,并在 CHANGELOG 记录
@@ -242,6 +242,9 @@ docs/architecture.md      接入契约与设计取舍
   标题生成、压缩等少量模型调用不在折叠范围内(实测差值 < 1 美分)。
 - 只在 DeepSeek 官方路由(`provider` 含 `deepseek`)上有价目;第三方 provider 标 `无价目` 且不计入合计。
 - 统计页需要**宿主半边**加载(即需要重启过 `dsh web`);只刷新页面而没重启时,页面会显示"宿主侧路由不可用"。
+- 官方核心的回合用量是「全有或全无」:回合里只要有一次重试请求没回报用量,官方「用量」胶囊就会消失。
+  本插件此时改用**宿主侧日志重算**补一个数(标题会写「按日志重算」),但日志里同样缺失的那部分用量,
+  会让这个数字**偏低**——它是不显示之外的次优选择,不是等价替代。
 - 极窄视口下胶囊跟随原生 stat pill 的收缩策略(本插件未额外做图标化折叠)。
 
 ## 📄 License
