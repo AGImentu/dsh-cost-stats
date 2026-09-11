@@ -62,7 +62,28 @@ describe('totalsOf', () => {
   })
 
   it('reports an empty selection as zeroes rather than undefined', () => {
-    expect(totalsOf([])).toMatchObject({ replies: 0, sessions: 0, cny: 0, usd: 0, tokens: 0 })
+    expect(totalsOf([])).toMatchObject({ replies: 0, compactions: 0, sessions: 0, cny: 0, usd: 0, tokens: 0 })
+  })
+
+  it('counts a compaction separately while its money joins the total', () => {
+    const rows = [
+      row({ turn: 1, cny: 1, usd: 0.15, tokens: 100 }),
+      row({ turn: 0, compaction: true, cny: 2, usd: 0.3, tokens: 200 }),
+    ]
+    const totals = totalsOf(rows)
+    expect(totals.replies).toBe(1)
+    expect(totals.compactions).toBe(1)
+    expect(totals.sessions).toBe(1)
+    expect(totals.cny).toBeCloseTo(3, 8)
+    expect(totals.usd).toBeCloseTo(0.45, 8)
+    expect(totals.tokens).toBe(300)
+  })
+
+  it('never counts a compaction as a subagent reply', () => {
+    const totals = totalsOf([row({ turn: 0, compaction: true, subagent: true })])
+    expect(totals.compactions).toBe(1)
+    expect(totals.subagents).toBe(0)
+    expect(totals.replies).toBe(0)
   })
 })
 

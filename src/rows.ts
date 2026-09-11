@@ -7,15 +7,25 @@
  * @module dsh-session-cost/rows
  */
 
-/** One assistant reply (turn) with its priced usage. */
+/** One billed item: an assistant reply (turn) or a context-compaction call. */
 export interface TurnCostRow {
   readonly sessionId: string
   readonly sessionTitle: string
   /** `true` when the session was spawned by a subagent (`delegationDepth > 0`). */
   readonly subagent: boolean
-  /** Turn number inside its session. */
+  /**
+   * Turn number inside its session; `0` for a compaction row, which belongs to
+   * no turn. Compaction rows are also flagged by {@link compaction}, so a reader
+   * never has to interpret the zero.
+   */
   readonly turn: number
-  /** Epoch ms the turn started: the row's time and its peak/off-peak input. */
+  /**
+   * `true` when this row is a billed context-compaction call rather than an
+   * assistant reply. Compactions are charged by the provider but belong to no
+   * reply, so they carry their own row instead of being hidden.
+   */
+  readonly compaction?: boolean
+  /** Epoch ms the turn started (the compaction's own time for a compaction row). */
   readonly at: number
   readonly provider?: string
   readonly model?: string
@@ -30,7 +40,7 @@ export interface TurnCostRow {
   readonly reasoningTokens: number
   /** Prompt plus output tokens. */
   readonly tokens: number
-  /** Billed attempts folded into this reply. */
+  /** Billed attempts folded into this reply (`1` for a compaction). */
   readonly attempts: number
 }
 

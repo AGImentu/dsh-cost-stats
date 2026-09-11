@@ -119,3 +119,54 @@ describe('foldSessionEvents', () => {
     expect(session.turns.map(turn => turn.turn)).toEqual([3])
   })
 })
+
+describe('compaction folding', () => {
+  it('reports no compactions for a log without any', () => {
+    expect(foldSessionEvents('s1', log()).compactions).toEqual([])
+  })
+
+  it('folds a compaction as its own billed item, with its own route', () => {
+    const session = foldSessionEvents('s1', [
+      ...log(),
+      {
+        type: 'compaction/summary',
+        time: T0 + 100,
+        data: {
+          compactionId: 'c1',
+          provider: 'deepseek-official',
+          model: 'deepseek-v4-pro',
+          usage: { inputTokens: 700, outputTokens: 40, cacheReadTokens: 20, reasoningTokens: 0, totalTokens: 760 },
+        },
+      },
+    ])
+    expect(session.compactions).toEqual([{
+      at: T0 + 100,
+      provider: 'deepseek-official',
+      model: 'deepseek-v4-pro',
+      uncachedInputTokens: 700,
+      cacheReadTokens: 20,
+      cacheWriteTokens: 0,
+      outputTokens: 40,
+      reasoningTokens: 0,
+    }])
+    // It must not be folded into a turn, and it must not change the turn count.
+    expect(session.turns).toHaveLength(2)
+    expect(session.turns[0]?.uncachedInputTokens).toBe(105)
+  })
+
+  it('drops a compaction whose usage does not validate', () => {
+    const session = foldSessionEvents('s1', [
+      { type: 'compaction/summary', time: T0, data: { provider: 'deepseek-official', model: 'deepseek-flash', usage: { inputTokens: 5 } } },
+      { type: 'compaction/summary', time: T0 + 1, data: { provider: 'deepseek-official', model: 'deepseek-flash' } },
+    ])
+    expect(session.compactions).toEqual([])
+  })
+
+  it('keeps a compaction with no route, leaving it unpriced rather than guessed', () => {
+    const session = foldSessionEvents('s1', [
+      { type: 'compaction/summary', time: T0, data: { usage: { inputTokens: 10, outputTokens: 2 } } },
+    ])
+    expect(session.compactions).toHaveLength(1)
+    expect(session.compactions[0]?.provider).toBeUndefined()
+  })
+})

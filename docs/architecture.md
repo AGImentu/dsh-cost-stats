@@ -94,20 +94,25 @@
 所以两条路径的数字口径一致,差别只在数据来源,并且回退值在标题(`cost.fold.title`)
 与浮层备注(`cost.note.fold`)里都写明是重算值。
 
-### 3.2 统计页(逐次回复,来自持久化日志)
+### 3.2 统计页(逐条计费项,来自持久化日志)
 
 ```
 持久化会话日志($DSH_HOME/sessions/**)
    └─> host:ctx.sessionPersistence.list() → open(id,'read') → handle.read()
-         └─> host/turn-fold.ts:事件 → 每次回复(窗口 / 模型 / 分档 token)
+         └─> host/turn-fold.ts:事件 → 每次回复 + 每次压缩(窗口 / 模型 / 分档 token)
                └─> pricing.estimateTurnUsage(...) → GET /session-cost/usage(JSON,TTL 缓存)
-                     └─> client:fetch → stats-model(日/月分桶 + 筛选 + 合计)→ StatsSection
+                     └─> client:fetch → stats-model(日/月键 + 合计 + 分页)→ StatsSection
 ```
 
 - **为什么在宿主侧**:逐条历史只存在于持久化日志里;浏览器只有当前会话已加载的窗口。
   宿主读日志是唯一能覆盖"所有会话、全部历史"的位置,而且不需要激活任何冷会话。
 - **逐次精确**:模型取该次回复的 `message.source.provider/model`(缺失时回退到最近一条 `model/selection`),
   高峰/空闲按该回合自身的 `turn/start`/`turn/end` 判定——比"按会话最近模型/最后活动"准。
+- **压缩单独成行**:`compaction/summary` 是一次独立的模型调用(实测一次约 $0.2,高峰),
+  它不属于任何回复,**官方「用量」胶囊也不显示它**。0.6.0 起折叠为 `FoldedCompaction`
+  并生成 `compaction: true` 的行(`turn: 0`):钱 / 用量 / 会话数计入合计,但**不计入「回复」数**;
+  胶囊兜底按 `sessionId + turn` 取行,并显式跳过它(否则压缩会被当成某个回复的价格)。
+  这是「与账户余额对账」发现的缺口:不加这一项时,一次压缩就让复算比余额少 $0.2。
 - **一次折叠,两处使用**:`turn-fold.ts` 是纯函数,宿主路由与 `scripts/verify-balance.mjs` 都用它,
   所以"界面上显示的"和"独立复算的"不可能因为实现分叉而不一致。
 - **有界**:只读最近 `MAX_SESSIONS`(120)个非空会话,载荷按 `CACHE_TTL_MS`(20s)缓存,并发请求共享一次构建,
@@ -146,6 +151,8 @@
 | 官方用量缺失时**插件侧兜底**,不动内核 | 内核那条 `tokenUsage` 置空规则有它的道理(它只肯给"能证明"的总量),改它等于改官方语义与官方胶囊。插件侧兜底把"少一个胶囊"变成"多一个标注过的估算",且官方数据在时永远优先。代价:多一条同源请求(有 TTL 与并发合并),以及两条路径必须在 UI 上可区分(标题/备注已区分) |
 | 兜底按 `sessionId + turn` 取行,不按时间或顺序 | 时间戳可能相同、回复数未必连续;只有"会话 + 回合号"是稳定键,取错行的代价比不显示更高 |
 | 统计页**默认筛选 = 今天**,并且分页而是滚动全部 | 打开页面第一眼想看的是"今天花了多少",而不是全部历史;固定的每页 15 条让列宽与行高稳定,长历史也不会变成一堵墙。分页算术是纯函数 `paginate`(越界夹取在渲染期完成),所以换筛选不会出现空白页或少一帧 |
+| **压缩单独成行**而不是悄悄并入附近回合 | 压缩不属于任何回合,却真实扣费(实测一次 $0.218)。并进某个回合会让那个回合的价格无法解释;单独一行 + 一个「压缩」标签,既让合计对得上账单,也不冒充回复。合计里它计入钱与用量、不计入「回复」数,同理 |
+| 余额对账靠**脚本 + 人工读余额**,不自动调 API | 插件不持有、不读取任何凭据(这是它的硬边界)。代价是对账需要一个外部读数,收益是"零凭据"这条承诺可以原样成立 |
 | 明细四列**统一左对齐**,费用 ¥/$ **同行** | 数值右对齐在只有一列数字时好看,但这里四列里有三列是文本/混合内容,混排会显得零散;¥ 与 $ 分两行会把每行撑高、其余单元格被 `vertical-align: top` 顶到上面 —— 左对齐 + 居中 + 同行,是这三件事同一个修法 |
 
 ## 5. DSH 升级时检查这 9 处
@@ -166,7 +173,9 @@
 7. `ctx.webServer.register({ kind, path, handler })` 的签名与 `req`/`res` 形态(`packages/host/webserver`);
 8. 会话头字段 `id` / `createdAt` / `cwd` / `delegationDepth`(`packages/session/session-format/src/types.ts`);
 9. 持久化事件形状:`turn/start|end.data.turn`、`assistant/message.data.usage`、
-   `assistant/message.data.message.source.provider|model`、`model/selection.data.provider|model`、`session/title.data.title`。
+   `assistant/message.data.message.source.provider|model`、`model/selection.data.provider|model`、`session/title.data.title`、
+   **`compaction/summary.data.usage` + `.provider` + `.model` 与事件的 `time`**(压缩计费项的来源;
+   事件本身没有 `data.turn`,所以窗口只能取 `event.time`)。
 
 前 5 处任一变化,`pnpm run smoke` 会先失败(它断言注册 id、插件形状、两个插槽名与真实算价);
 第 6–9 处会先由 `tsc` 报错(镜像类型),再在真机上表现为统计页报错或行数变少 —— 用 `pnpm run verify:balance` 可直接定位到折叠层。
@@ -176,9 +185,9 @@
 | 层 | 工具 | 覆盖 |
 |---|---|---|
 | 计费纯函数 | `vitest`(`tests/pricing.spec.ts`) | 别名/改路规则、高峰窗口边界(含 12:00、周末、跨时区)、三档金额、混用模型、无路由不猜 |
-| 日志折叠 | `vitest`(`tests/turn-fold.spec.ts`) | 头部/标题、回合窗口、多尝试累加、`message.source` 优先与 `model/selection` 回退、非法用量整条丢弃、无人认领的 usage、`assistant/attempt` 重试、未知事件容错 |
-| 统计模型 | `vitest`(`tests/stats-model.spec.ts`) | 日/月键、合计(回复数/会话数/子代理/未计价/金额/用量)、空选择返回 0、分页(切页/越界夹取/非正数与 NaN/空选择/每页 0 条) |
-| 兜底缓存 | `vitest`(`tests/usage-store.spec.ts`) | 并发三次只发一次请求、TTL 内复用 / 过期重取、`?refresh=1`、失败保留旧数据并记录错误、非 2xx 视为错误、按 `会话+回合` 查找(不串会话)、订阅与退订 |
+| 日志折叠 | `vitest`(`tests/turn-fold.spec.ts`) | 头部/标题、回合窗口、多尝试累加、`message.source` 优先与 `model/selection` 回退、非法用量整条丢弃、无人认领的 usage、`assistant/attempt` 重试、未知事件容错、**压缩折叠(独立计费项 / 自带路由 / 非法用量丢弃 / 无路由不猜)** |
+| 统计模型 | `vitest`(`tests/stats-model.spec.ts`) | 日/月键、合计(回复/压缩分开计数、会话数、子代理、未计价、金额、用量)、空选择返回 0、分页(切页/越界夹取/非正数与 NaN/空选择/每页 0 条) |
+| 兜底缓存 | `vitest`(`tests/usage-store.spec.ts`) | 并发三次只发一次请求、TTL 内复用 / 过期重取、`?refresh=1`、失败保留旧数据并记录错误、非 2xx 视为错误、按 `会话+回合` 查找(不串会话、**不取压缩行**)、订阅与退订 |
 | 产物契约 | `node scripts/smoke-client-bundle.mjs` | bundle 注册 id = 包名、工厂返回 `inject`/`apply`、两个插槽各注册一项、导航 label 非空、**两个条目的渲染抛错都被隔离成 null**、胶囊对真实分档算出 `≈¥5`、无路由不渲染、统计页发起宿主请求、**官方用量缺失时首屏不渲染 → 兜底拿到数据后渲染 `≈¥5` → 标题标注为「按日志重算」→ 不借用其他会话的行** |
 | 独立复算 | `node scripts/verify-balance.mjs` | 绕过宿主直读日志复算全部会话累计,并与 API 余额的差值对账(2026-09-11 实测 Δ$0.249 vs 余额 Δ$0.25) |
 | 真机 | 手动 | 重启 `dsh web` + 硬刷新:核对胶囊与原生用量弹窗的分档一致性、统计页逐条明细与合计 |

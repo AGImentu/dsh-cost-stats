@@ -13,14 +13,17 @@ import type { TurnCostRow } from '../rows.ts'
 
 /** Totals over a row selection. */
 export interface CostTotals {
-  /** Replies inside the selection. */
+  /** Assistant replies inside the selection (compaction calls excluded). */
   readonly replies: number
-  /** Distinct sessions the selected replies belong to. */
+  /** Billed context-compaction calls inside the selection. */
+  readonly compactions: number
+  /** Distinct sessions the selected rows belong to. */
   readonly sessions: number
-  /** Replies inside the selection that could not be priced. */
+  /** Rows inside the selection that could not be priced. */
   readonly unpriced: number
   /** Replies produced by a subagent session. */
   readonly subagents: number
+  /** Money and tokens over EVERY selected row, compactions included. */
   readonly cny: number
   readonly usd: number
   readonly tokens: number
@@ -49,8 +52,12 @@ export function monthKeyOf(at: number): string {
 
 /**
  * Totals over a row selection.
+ *
+ * Compaction rows count toward the money, tokens and session total — they are
+ * real charges — but not toward {@link CostTotals.replies}, so "回复 16 · 压缩 1"
+ * never reads as seventeen replies.
  * @param rows - selected rows.
- * @returns reply/session counts, money, tokens, and the unpriced/subagent split.
+ * @returns reply/compaction/session counts and the money/token totals.
  */
 export function totalsOf(rows: readonly TurnCostRow[]): CostTotals {
   let cny = 0
@@ -58,16 +65,22 @@ export function totalsOf(rows: readonly TurnCostRow[]): CostTotals {
   let tokens = 0
   let unpriced = 0
   let subagents = 0
+  let replies = 0
+  let compactions = 0
   const sessions = new Set<string>()
   for (const row of rows) {
     cny += row.cny
     usd += row.usd
     tokens += row.tokens
     if (!row.priced) unpriced += 1
-    if (row.subagent) subagents += 1
+    if (row.compaction === true) compactions += 1
+    else {
+      replies += 1
+      if (row.subagent) subagents += 1
+    }
     sessions.add(row.sessionId)
   }
-  return { replies: rows.length, sessions: sessions.size, unpriced, subagents, cny, usd, tokens }
+  return { replies, compactions, sessions: sessions.size, unpriced, subagents, cny, usd, tokens }
 }
 
 /** One rendered page of a row selection. */

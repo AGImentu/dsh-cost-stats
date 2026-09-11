@@ -19,7 +19,7 @@
 import { estimateTurnUsage } from '../pricing.ts'
 import type { TurnCostRow, UsagePayload } from '../rows.ts'
 import type { HostContextLike } from './contract.ts'
-import { foldSessionEvents, type DurableEventLike, type FoldedTurn } from './turn-fold.ts'
+import { foldSessionEvents, type DurableEventLike, type FoldedCompaction, type FoldedTurn } from './turn-fold.ts'
 
 /** Newest sessions read per payload build. */
 export const MAX_SESSIONS = 120
@@ -36,46 +36,124 @@ function baseName(path: string | undefined): string | undefined {
   return name.length > 0 ? name : undefined
 }
 
+/** The token buckets and route one row prices. */
+interface PricedSource {
+  readonly provider?: string | undefined
+  readonly model?: string | undefined
+  readonly uncachedInputTokens: number
+  readonly cacheReadTokens: number
+  readonly cacheWriteTokens: number
+  readonly outputTokens: number
+  readonly reasoningTokens: number
+}
+
 /**
- * Price one folded turn.
- * @param session - folded session owning the turn.
- * @param turn - the folded turn.
+ * Price one billed item.
+ * @param sessionId - owning session.
+ * @param title - display title.
+ * @param subagent - whether the session is a subagent's.
+ * @param source - the buckets and route to price.
+ * @param window - the item's start/end instants (peak classification input).
+ * @param turn - turn number; `0` for a compaction row.
+ * @param attempts - billed attempts folded into this item.
+ * @param compaction - whether this item is a compaction call.
  * @returns the response row.
  */
-function rowFor(sessionId: string, title: string, subagent: boolean, turn: FoldedTurn): TurnCostRow {
-  const attributed = turn.provider !== undefined && turn.model !== undefined
+function rowFor(
+  sessionId: string,
+  title: string,
+  subagent: boolean,
+  source: PricedSource,
+  window: { startMs: number, endMs?: number },
+  turn: number,
+  attempts: number,
+  compaction = false,
+): TurnCostRow {
+  const attributed = source.provider !== undefined && source.model !== undefined
   const estimate = estimateTurnUsage(
     {
-      uncachedInputTokens: turn.uncachedInputTokens,
-      outputTokens: turn.outputTokens,
-      cacheReadTokens: turn.cacheReadTokens,
-      cacheWriteTokens: turn.cacheWriteTokens,
-      reasoningTokens: turn.reasoningTokens,
-      ...(attributed ? { routes: [{ provider: turn.provider as string, model: turn.model as string }] } : {}),
+      uncachedInputTokens: source.uncachedInputTokens,
+      outputTokens: source.outputTokens,
+      cacheReadTokens: source.cacheReadTokens,
+      cacheWriteTokens: source.cacheWriteTokens,
+      reasoningTokens: source.reasoningTokens,
+      ...(attributed ? { routes: [{ provider: source.provider as string, model: source.model as string }] } : {}),
     },
-    { startMs: turn.startedAt, ...(turn.endedAt === undefined ? {} : { endMs: turn.endedAt }) },
-    turn.startedAt,
+    window,
+    window.startMs,
   )
   const priced = estimate !== undefined && estimate.unpricedModels.length === 0
   return {
     sessionId,
     sessionTitle: title,
     subagent,
-    turn: turn.turn,
-    at: turn.startedAt,
-    ...(turn.provider === undefined ? {} : { provider: turn.provider }),
-    ...(turn.model === undefined ? {} : { model: turn.model }),
+    turn,
+    ...(compaction ? { compaction: true } : {}),
+    at: window.startMs,
+    ...(source.provider === undefined ? {} : { provider: source.provider }),
+    ...(source.model === undefined ? {} : { model: source.model }),
     ...(priced && estimate !== undefined ? { plan: estimate.plan.label } : {}),
     priced,
     cny: priced && estimate !== undefined ? estimate.cny.total : 0,
     usd: priced && estimate !== undefined ? estimate.usd.total : 0,
-    uncachedInputTokens: turn.uncachedInputTokens,
-    cacheReadTokens: turn.cacheReadTokens,
-    outputTokens: turn.outputTokens,
-    reasoningTokens: turn.reasoningTokens,
-    tokens: turn.uncachedInputTokens + turn.cacheReadTokens + turn.outputTokens,
-    attempts: turn.attempts,
+    uncachedInputTokens: source.uncachedInputTokens,
+    cacheReadTokens: source.cacheReadTokens,
+    outputTokens: source.outputTokens,
+    reasoningTokens: source.reasoningTokens,
+    tokens: source.uncachedInputTokens + source.cacheReadTokens + source.outputTokens,
+    attempts,
   }
+}
+
+/**
+ * Price one folded turn.
+ * @param sessionId - owning session.
+ * @param title - display title.
+ * @param subagent - whether the session is a subagent's.
+ * @param turn - the folded turn.
+ * @returns the response row.
+ */
+function turnRow(sessionId: string, title: string, subagent: boolean, turn: FoldedTurn): TurnCostRow {
+  return rowFor(
+    sessionId,
+    title,
+    subagent,
+    turn,
+    { startMs: turn.startedAt, ...(turn.endedAt === undefined ? {} : { endMs: turn.endedAt }) },
+    turn.turn,
+    turn.attempts,
+  )
+}
+
+/**
+ * Price one folded compaction call.
+ *
+ * It gets its own row because the provider bills it, yet it belongs to no reply:
+ * without this row the page's total silently trails the invoice (measured: one
+ * compaction can be ~$0.2 at peak rates).
+ * @param sessionId - owning session.
+ * @param title - display title.
+ * @param subagent - whether the session is a subagent's.
+ * @param compaction - the folded compaction.
+ * @returns the response row.
+ */
+function compactionRow(
+  sessionId: string,
+  title: string,
+  subagent: boolean,
+  compaction: FoldedCompaction,
+): TurnCostRow {
+  // Priced at its own instant: a compaction is one request, so start = end.
+  return rowFor(
+    sessionId,
+    title,
+    subagent,
+    compaction,
+    { startMs: compaction.at, endMs: compaction.at },
+    0,
+    1,
+    true,
+  )
 }
 
 /** Builds and caches the statistics payload. */
@@ -133,7 +211,12 @@ export class SessionCostIndex {
         let priced = 0
         for (const turn of session.turns) {
           if (turn.attempts === 0) continue
-          const row = rowFor(session.id, title, subagent, turn)
+          const row = turnRow(session.id, title, subagent, turn)
+          rows.push(row)
+          if (row.priced) priced += 1
+        }
+        for (const compaction of session.compactions) {
+          const row = compactionRow(session.id, title, subagent, compaction)
           rows.push(row)
           if (row.priced) priced += 1
         }

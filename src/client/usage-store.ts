@@ -81,14 +81,19 @@ export class UsageStore {
   }
 
   /**
-   * Find one reply's row.
+   * Find one assistant reply's row.
+   *
+   * Compaction rows are skipped even though they carry the same session id: a
+   * compaction belongs to no turn, so it must never stand in for the reply the
+   * chip is pricing (whose turn number is always ≥ 1).
    * @param sessionId - session id, when known.
    * @param turn - turn number inside that session.
-   * @returns the row, or undefined while the payload lacks it.
+   * @returns the reply's row, or undefined while the payload lacks it.
    */
   lookup(sessionId: string | undefined, turn: number | undefined): TurnCostRow | undefined {
     if (sessionId === undefined || turn === undefined) return undefined
-    return this.snapshot.rows.find(row => row.sessionId === sessionId && row.turn === turn)
+    return this.snapshot.rows.find(row =>
+      row.compaction !== true && row.sessionId === sessionId && row.turn === turn)
   }
 
   /** Fetch once and publish the result. */

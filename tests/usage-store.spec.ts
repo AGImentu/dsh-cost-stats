@@ -152,6 +152,15 @@ describe('UsageStore', () => {
     expect(store.lookup('s1', undefined)).toBeUndefined()
   })
 
+  it('never returns a compaction row in place of a reply', async () => {
+    const compaction = { ...row('s1', 0, 7), compaction: true as const }
+    const { store } = harness([payload([compaction])], { value: 0 })
+    store.ensure()
+    await settle()
+    expect(store.lookup('s1', 0)).toBeUndefined()
+    expect(store.lookup('s1', 3)).toBeUndefined()
+  })
+
   it('notifies subscribers and stops after unsubscribe', async () => {
     const { store } = harness([payload([row('s1', 3)])], { value: 0 })
     const seen = vi.fn()

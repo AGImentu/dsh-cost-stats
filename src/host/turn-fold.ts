@@ -14,6 +14,12 @@
  *                               `data.message.source` (per-attempt precision),
  *                               falling back to the session's last selection
  * - `assistant/attempt`       → the same shape for a retried attempt (billed too)
+ * - `compaction/summary`      → a billed context-compaction call. It is NOT an
+ *                               assistant reply, but the provider charges it, and
+ *                               neither the native turn-usage pill nor a
+ *                               reply-only fold can see it; it is folded into
+ *                               {@link FoldedSession.compactions} so the page's
+ *                               total can match the invoice.
  *
  * Usage semantics: `inputTokens` is the UNCACHED prompt count (the provider
  * adapter subtracts the cache reads), `outputTokens` already contains the
@@ -49,6 +55,20 @@ export interface FoldedTurn {
   readonly attempts: number
 }
 
+/** One billed context-compaction call of a session. */
+export interface FoldedCompaction {
+  /** Epoch ms of the summary that carries the usage. */
+  readonly at: number
+  /** Route the compaction request went to (the event names it directly). */
+  readonly provider?: string
+  readonly model?: string
+  readonly uncachedInputTokens: number
+  readonly cacheReadTokens: number
+  readonly cacheWriteTokens: number
+  readonly outputTokens: number
+  readonly reasoningTokens: number
+}
+
 /** One folded session. */
 export interface FoldedSession {
   readonly id: string
@@ -57,6 +77,8 @@ export interface FoldedSession {
   readonly createdAt?: number
   readonly delegationDepth: number
   readonly turns: readonly FoldedTurn[]
+  /** Every billed compaction call, in log order. */
+  readonly compactions: readonly FoldedCompaction[]
 }
 
 /** Whether a value is a non-negative safe integer. */
@@ -94,11 +116,32 @@ interface TurnAccumulator {
   attempts: number
 }
 
+/** Whether a validated usage payload's buckets, or undefined when it is unusable. */
+function usageBuckets(usage: Record<string, unknown> | undefined):
+{ uncachedInputTokens: number, cacheReadTokens: number, cacheWriteTokens: number, outputTokens: number, reasoningTokens: number } | undefined {
+  if (usage === undefined) return undefined
+  // Mirror DSH's own meter: a sample whose counts do not validate is dropped
+  // entirely rather than counted with zeroes, so a corrupt payload can never
+  // inflate an attempt count or understate a bill.
+  if (!isCount(usage.inputTokens) || !isCount(usage.outputTokens)) return undefined
+  if (usage.cacheReadTokens !== undefined && !isCount(usage.cacheReadTokens)) return undefined
+  if (usage.cacheWriteTokens !== undefined && !isCount(usage.cacheWriteTokens)) return undefined
+  if (usage.reasoningTokens !== undefined
+    && (!isCount(usage.reasoningTokens) || usage.reasoningTokens > usage.outputTokens)) return undefined
+  return {
+    uncachedInputTokens: usage.inputTokens,
+    cacheReadTokens: count(usage.cacheReadTokens),
+    cacheWriteTokens: count(usage.cacheWriteTokens),
+    outputTokens: usage.outputTokens,
+    reasoningTokens: count(usage.reasoningTokens),
+  }
+}
+
 /**
  * Fold one session's events.
  * @param sessionId - fallback id when the header is missing.
  * @param events - the durable events, in seq order.
- * @returns the session with its billable turns, ordered by turn number.
+ * @returns the session with its billable turns and compactions.
  */
 export function foldSessionEvents(
   sessionId: string,
@@ -112,6 +155,7 @@ export function foldSessionEvents(
   let selectionProvider: string | undefined
   let selectionModel: string | undefined
   const turns = new Map<number, TurnAccumulator>()
+  const compactions: FoldedCompaction[] = []
   let openTurn: number | undefined
 
   const accumulatorFor = (turn: number, at: number): TurnAccumulator => {
@@ -172,18 +216,10 @@ export function foldSessionEvents(
       case 'assistant/message':
       case 'assistant/attempt': {
         if (data === undefined) break
-        const usage = record(data.usage)
-        if (usage === undefined) break
+        const buckets = usageBuckets(record(data.usage))
+        if (buckets === undefined) break
         const turn = isCount(data.turn) ? data.turn : openTurn
         if (turn === undefined) break
-        // Mirror DSH's own meter: an attempt whose usage does not validate is
-        // dropped entirely rather than counted with zeroes, so a corrupt sample
-        // can never inflate the attempt count or understate a bill.
-        if (!isCount(usage.inputTokens) || !isCount(usage.outputTokens)) break
-        if (usage.cacheReadTokens !== undefined && !isCount(usage.cacheReadTokens)) break
-        if (usage.cacheWriteTokens !== undefined && !isCount(usage.cacheWriteTokens)) break
-        if (usage.reasoningTokens !== undefined
-          && (!isCount(usage.reasoningTokens) || usage.reasoningTokens > usage.outputTokens)) break
         const accumulator = accumulatorFor(turn, at)
         // Per-attempt route from the message that answered; the session's last
         // durable selection is the fallback for logs without a source block.
@@ -195,12 +231,28 @@ export function foldSessionEvents(
           accumulator.provider = provider
           accumulator.model = model
         }
-        accumulator.uncachedInputTokens += usage.inputTokens
-        accumulator.cacheReadTokens += count(usage.cacheReadTokens)
-        accumulator.cacheWriteTokens += count(usage.cacheWriteTokens)
-        accumulator.outputTokens += usage.outputTokens
-        accumulator.reasoningTokens += count(usage.reasoningTokens)
+        accumulator.uncachedInputTokens += buckets.uncachedInputTokens
+        accumulator.cacheReadTokens += buckets.cacheReadTokens
+        accumulator.cacheWriteTokens += buckets.cacheWriteTokens
+        accumulator.outputTokens += buckets.outputTokens
+        accumulator.reasoningTokens += buckets.reasoningTokens
         accumulator.attempts += 1
+        break
+      }
+      case 'compaction/summary': {
+        if (data === undefined) break
+        const buckets = usageBuckets(record(data.usage))
+        if (buckets === undefined) break
+        // The summary event names its own route, so no selection fallback here:
+        // a compaction can run on a different model than the session's turns.
+        const provider = text(data.provider)
+        const model = text(data.model)
+        compactions.push({
+          at,
+          ...(provider === undefined ? {} : { provider }),
+          ...(model === undefined ? {} : { model }),
+          ...buckets,
+        })
         break
       }
       default:
@@ -231,5 +283,6 @@ export function foldSessionEvents(
     ...(createdAt === undefined ? {} : { createdAt }),
     delegationDepth,
     turns: folded,
+    compactions,
   }
 }

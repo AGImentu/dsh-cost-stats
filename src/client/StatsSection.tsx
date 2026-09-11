@@ -171,6 +171,9 @@ export function CostStatsSection({ t }: CostStatsProps): ReactNode {
           </div>
           <div className={CLASS.statsMetrics}>
             <span className={CLASS.metric}>{tr('stats.metric.replies')} {totals.replies}</span>
+            {totals.compactions > 0 && (
+              <span className={CLASS.metric}>{tr('stats.metric.compactions')} {totals.compactions}</span>
+            )}
             <span className={CLASS.metric}>{tr('stats.metric.sessions')} {totals.sessions}</span>
             <span className={CLASS.metric}>{tr('stats.metric.tokens')} {formatTokens(totals.tokens)}</span>
             {totals.subagents > 0 && (
@@ -246,21 +249,28 @@ export function CostStatsSection({ t }: CostStatsProps): ReactNode {
 }
 
 /**
- * One reply row: stamp, session name with tags, tokens, money.
+ * One row of the list: stamp, session name with tags, tokens, money.
  *
- * Money keeps both currencies on one line (the column is the narrowest of the
- * four, and a stacked second line was what made every row look tall and
- * top-heavy), and the USD half stays muted so the CNY figure reads first.
+ * A compaction row is not a reply: it has no turn number, carries the
+ * 「压缩」badge, and its tooltip says so too. Money keeps both currencies on one
+ * line (the column is the narrowest of the four, and a stacked second line was
+ * what made every row look tall and top-heavy), and the USD half stays muted so
+ * the CNY figure reads first.
  * @param props - the priced row, translator, and the reference instant.
  * @returns the table row.
  */
 function ReplyRow({ row, tr, now }: { row: TurnCostRow, tr: Translator, now: number }): ReactNode {
-  const label = `${row.sessionTitle} · #${String(row.turn)}${row.model === undefined ? '' : ` · ${row.model}`}`
+  const isCompaction = row.compaction === true
+  const suffix = row.model === undefined ? '' : ` · ${row.model}`
+  const label = isCompaction
+    ? `${row.sessionTitle} · ${tr('stats.tag.compaction')}${suffix}`
+    : `${row.sessionTitle} · #${String(row.turn)}${suffix}`
   return (
     <tr>
       <td>{formatStamp(row.at, now)}</td>
       <td className={CLASS.session} title={label}>
         {row.sessionTitle}
+        {isCompaction && <span className={CLASS.badge}>{tr('stats.tag.compaction')}</span>}
         {row.subagent && <span className={CLASS.badge}>{tr('stats.tag.subagent')}</span>}
         {!row.priced && <span className={CLASS.badge}>{tr('stats.tag.unpriced')}</span>}
       </td>

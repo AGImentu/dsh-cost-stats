@@ -58,6 +58,7 @@ export const zh: Readonly<Record<string, string>> = {
   'stats.pick.thisMonth': '本月',
   'stats.pick.monthShort': '{month}月',
   'stats.metric.replies': '回复',
+  'stats.metric.compactions': '压缩',
   'stats.metric.sessions': '会话',
   'stats.metric.subagents': '含子代理 {count}',
   'stats.metric.tokens': '用量',
@@ -74,6 +75,7 @@ export const zh: Readonly<Record<string, string>> = {
   'stats.empty': '这段时间没有可统计的用量。换个日期/月份，或点「清除筛选」看全部。',
   'stats.tag.subagent': '子代理',
   'stats.tag.unpriced': '无价目',
+  'stats.tag.compaction': '压缩',
 }
 
 /** English dictionary. */
@@ -123,6 +125,7 @@ export const en: Readonly<Record<string, string>> = {
   'stats.pick.thisMonth': 'This month',
   'stats.pick.monthShort': '{month}',
   'stats.metric.replies': 'Replies',
+  'stats.metric.compactions': 'Compactions',
   'stats.metric.sessions': 'Sessions',
   'stats.metric.subagents': '{count} subagent',
   'stats.metric.tokens': 'Tokens',
@@ -139,6 +142,7 @@ export const en: Readonly<Record<string, string>> = {
   'stats.empty': 'No usage in this range. Pick another day/month, or clear the filter to see everything.',
   'stats.tag.subagent': 'subagent',
   'stats.tag.unpriced': 'unpriced',
+  'stats.tag.compaction': 'compaction',
 }
 
 /**

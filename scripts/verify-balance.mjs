@@ -101,6 +101,7 @@ const turns = []
 let sessions = 0
 let unreadable = 0
 let unpriced = 0
+let compactionCount = 0
 const eventHistogram = new Map()
 
 for (const path of logs) {
@@ -123,21 +124,25 @@ for (const path of logs) {
   }
   const session = foldSessionEvents(path, events)
   if (session.turns.length > 0) sessions += 1
+  /** Price one billed item with the shipped tables (the same call the host makes). */
+  const price = (source, window) => {
+    const attributed = source.provider !== undefined && source.model !== undefined
+    return estimateTurnUsage(
+      {
+        uncachedInputTokens: source.uncachedInputTokens,
+        outputTokens: source.outputTokens,
+        cacheReadTokens: source.cacheReadTokens,
+        cacheWriteTokens: source.cacheWriteTokens,
+        reasoningTokens: source.reasoningTokens,
+        ...(attributed ? { routes: [{ provider: source.provider, model: source.model }] } : {}),
+      },
+      window,
+      window.startMs,
+    )
+  }
   for (const turn of session.turns) {
     if (turn.attempts === 0) continue
-    const attributed = turn.provider !== undefined && turn.model !== undefined
-    const estimate = estimateTurnUsage(
-      {
-        uncachedInputTokens: turn.uncachedInputTokens,
-        outputTokens: turn.outputTokens,
-        cacheReadTokens: turn.cacheReadTokens,
-        cacheWriteTokens: turn.cacheWriteTokens,
-        reasoningTokens: turn.reasoningTokens,
-        ...(attributed ? { routes: [{ provider: turn.provider, model: turn.model }] } : {}),
-      },
-      { startMs: turn.startedAt, ...(turn.endedAt === undefined ? {} : { endMs: turn.endedAt }) },
-      turn.startedAt,
-    )
+    const estimate = price(turn, { startMs: turn.startedAt, ...(turn.endedAt === undefined ? {} : { endMs: turn.endedAt }) })
     const priced = estimate !== undefined && estimate.unpricedModels.length === 0
     if (!priced) unpriced += 1
     turns.push({
@@ -145,6 +150,22 @@ for (const path of logs) {
       subagent: session.delegationDepth > 0,
       at: turn.startedAt,
       tokens: turn.uncachedInputTokens + turn.cacheReadTokens + turn.outputTokens,
+      cny: priced ? estimate.cny.total : 0,
+      usd: priced ? estimate.usd.total : 0,
+    })
+  }
+  // Compaction calls belong to no reply but are real charges; without them the
+  // recompute cannot match the balance (measured: ~$0.2 per compaction at peak).
+  for (const compaction of session.compactions) {
+    const estimate = price(compaction, { startMs: compaction.at, endMs: compaction.at })
+    const priced = estimate !== undefined && estimate.unpricedModels.length === 0
+    if (!priced) unpriced += 1
+    compactionCount += 1
+    turns.push({
+      session: `${session.title ?? session.id.slice(0, 8)} [compaction]`,
+      subagent: false,
+      at: compaction.at,
+      tokens: compaction.uncachedInputTokens + compaction.cacheReadTokens + compaction.outputTokens,
       cny: priced ? estimate.cny.total : 0,
       usd: priced ? estimate.usd.total : 0,
     })
@@ -160,7 +181,7 @@ const sum = (rows) => rows.reduce(
 console.log(`repo        : ${repo}`)
 console.log(`sessions dir: ${sessionsRoot}`)
 console.log(`logs found  : ${logs.length} (folded ${sessions} with turns, unreadable ${unreadable})`)
-console.log(`replies     : ${turns.length} priced rows, ${unpriced} unpriced\n`)
+console.log(`replies     : ${turns.length - compactionCount} priced rows + ${compactionCount} compactions, ${unpriced} unpriced\n`)
 
 console.log('=== per session ===')
 const bySession = new Map()
@@ -186,7 +207,8 @@ for (const [key, rows] of [...byDay.entries()].sort()) {
 }
 
 const grand = sum(turns)
-console.log(`\nGRAND TOTAL : ${formatMoney(grand.cny, 'CNY')} / ${formatMoney(grand.usd, 'USD')} over ${grand.replies} replies`)
+console.log(`\nGRAND TOTAL : ${formatMoney(grand.cny, 'CNY')} / ${formatMoney(grand.usd, 'USD')} over ${grand.replies} billed items `
+  + `(${grand.replies - compactionCount} replies + ${compactionCount} compactions)`)
 
 if (checkpoints.length > 0) {
   console.log('\n=== cumulative at checkpoints (compare DELTAS with the API balance) ===')
