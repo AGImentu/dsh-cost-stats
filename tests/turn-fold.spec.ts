@@ -271,3 +271,91 @@ describe('seeded (forked) logs', () => {
     expect(session.turns.map(turn => turn.turn)).toEqual([1, 7])
   })
 })
+
+/**
+ * DSH 0.1.7 introduced session format v4.
+ *
+ * The upgrade lifts tool results into a proper tool role, renames producer
+ * sources and closes evidenced interrupted turns. Measured against a real v4 log
+ * on this machine, the turns shared with that session's released v3 generation
+ * fold to identical numbers, so these fixtures pin the two things the fold must
+ * keep ignoring and the two it must keep reading.
+ */
+describe('session format v4', () => {
+  /**
+   * A v4 log: the physical header carries version 4 at the top level, the tool
+   * role is native, and the assistant payload keeps the v3 shape.
+   */
+  function v4Log(): readonly DurableEventLike[] {
+    return [
+      {
+        type: 'session',
+        version: 4,
+        id: 'v4-session',
+        createdAt: T0,
+        cwd: 'D:\\work\\app',
+        isSeeded: false,
+        delegationDepth: 0,
+        agentPreset: 'standard',
+      },
+      { type: 'session/title', time: T0 + 1, data: { title: 'v4 chat' } },
+      { type: 'model/selection', time: T0 + 2, data: { provider: 'deepseek-official', model: 'deepseek-flash' } },
+      { type: 'turn/start', time: T0 + 10, data: { turn: 1 } },
+      // v4-only vocabulary: a lifted tool result and a system message. Neither is
+      // a billed attempt, and neither may contribute tokens.
+      { type: 'tool/result', time: T0 + 12, data: { message: { role: 'tool', toolCallId: 'call_1' } } },
+      { type: 'system/message', time: T0 + 14, data: { role: 'system' } },
+      { type: 'assistant/message', time: T0 + 20, data: { turn: 1, step: 1, usage: { inputTokens: 100, outputTokens: 50 } } },
+      { type: 'tool/call', time: T0 + 22, data: { callId: 'call_1', name: 'read' } },
+      { type: 'assistant/message', time: T0 + 30, data: { turn: 1, step: 2, usage: { inputTokens: 7, outputTokens: 3 } } },
+      { type: 'turn/end', time: T0 + 40, data: { turn: 1, reason: { kind: 'completed' } } },
+    ]
+  }
+
+  it('folds a v4 turn from the top-level header without the new event types', () => {
+    const session = foldSessionEvents('fallback', v4Log())
+    expect(session.id).toBe('v4-session')
+    expect(session.formatVersion).toBe(4)
+    expect(session.delegationDepth).toBe(0)
+    expect(session.isSeeded).toBe(false)
+    expect(session.turns).toHaveLength(1)
+    // Only the two assistant messages count: the tool result and the system
+    // message are structural, not billed.
+    expect(session.turns[0]).toMatchObject({ uncachedInputTokens: 107, outputTokens: 53, attempts: 2 })
+  })
+
+  it('still prices a v4 log when the route comes from the durable selection', () => {
+    const session = foldSessionEvents('fallback', v4Log())
+    expect(session.turns[0]?.provider).toBe('deepseek-official')
+    expect(session.turns[0]?.model).toBe('deepseek-flash')
+  })
+
+  it('folds a v4 log to the same numbers as its v3 predecessor', () => {
+    const v4 = foldSessionEvents('fallback', v4Log())
+    const v3 = foldSessionEvents('fallback', [
+      { type: 'session', time: T0, data: { id: 'v4-session', cwd: 'D:\\work\\app', createdAt: T0, delegationDepth: 0 } },
+      ...v4Log().slice(1),
+    ])
+    const shape = (session: ReturnType<typeof foldSessionEvents>) => JSON.stringify(
+      session.turns.map(turn => [turn.turn, turn.startedAt, turn.uncachedInputTokens, turn.outputTokens, turn.attempts]),
+    )
+    expect(shape(v4)).toBe(shape(v3))
+  })
+
+  it('honours the fork cut in a v4 log through the inherited seam', () => {
+    const session = foldSessionEvents('fallback', [
+      // A seeded v4 header: the child's log opens with the parent's events.
+      { type: 'session', version: 4, id: 'child', isSeeded: true, parentSession: 'parent', delegationDepth: 1 },
+      ...v4Log().slice(1, 7),
+      { type: 'session/end-seed', seq: 8, time: T0 + 16, data: { inherited: true } },
+      { type: 'turn/start', seq: 9, time: T0 + 100, data: { turn: 5 } },
+      { type: 'assistant/message', seq: 10, time: T0 + 110, data: { turn: 5, usage: { inputTokens: 2, outputTokens: 4 } } },
+    ])
+    expect(session.isSeeded).toBe(true)
+    expect(session.delegationDepth).toBe(1)
+    // Only the child's own turn survives; the inherited prefix has no seq and is
+    // dropped for exactly that reason.
+    expect(session.turns.map(turn => turn.turn)).toEqual([5])
+    expect(session.turns[0]?.uncachedInputTokens).toBe(2)
+  })
+})

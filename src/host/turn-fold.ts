@@ -32,15 +32,17 @@
 /**
  * One durable event, narrowed to what the fold reads.
  *
- * The `session` header carries its fields at the TOP level (`id`, `cwd`,
- * `createdAt`, `delegationDepth`, `isSeeded`, `parentSession`), unlike every
- * other event whose payload sits under `data`; both shapes are accepted.
+ * The `session` header carries its fields at the TOP level (`version`, `id`,
+ * `cwd`, `createdAt`, `delegationDepth`, `isSeeded`, `parentSession`), unlike
+ * every other event whose payload sits under `data`; both shapes are accepted.
  */
 export interface DurableEventLike {
   readonly type: string
   readonly seq?: number
   readonly time?: number
   readonly data?: unknown
+  /** Physical session-format version of the header (v3, v4, …); diagnostics only. */
+  readonly version?: number
   readonly id?: string
   readonly cwd?: string
   readonly createdAt?: number
@@ -48,6 +50,12 @@ export interface DurableEventLike {
   readonly isSeeded?: boolean
   readonly parentSession?: string
   readonly origin?: string
+  /**
+   * Agent preset id carried by the header. The fold does not interpret it; it is
+   * declared so a real header can be typed verbatim in fixtures and the header
+   * contract stays visible in one place.
+   */
+  readonly agentPreset?: string
 }
 
 /** One billed turn of a session. */
@@ -102,6 +110,8 @@ export interface FoldedSession {
   readonly title?: string
   readonly cwd?: string
   readonly createdAt?: number
+  /** Physical session-format version, when the header declares one. */
+  readonly formatVersion?: number
   readonly delegationDepth: number
   readonly turns: readonly FoldedTurn[]
   /** Every billed compaction call, in log order. */
@@ -179,6 +189,7 @@ function usageBuckets(usage: Record<string, unknown> | undefined):
 function sessionHeader(event: DurableEventLike): Record<string, unknown> {
   const data = record(event.data) ?? {}
   return {
+    version: event.version ?? data.version,
     id: event.id ?? data.id,
     cwd: event.cwd ?? data.cwd,
     createdAt: event.createdAt ?? data.createdAt,
@@ -245,6 +256,7 @@ export function foldSessionEvents(
   // Read the header first: whether this log is a fork decides how much of it
   // belongs to this session at all.
   let isSeeded = false
+  let formatVersion: number | undefined
   for (const event of events) {
     if (event.type !== 'session') continue
     const header = sessionHeader(event)
@@ -252,6 +264,7 @@ export function foldSessionEvents(
     cwd = text(header.cwd) ?? cwd
     if (isCount(header.createdAt)) createdAt = header.createdAt
     if (isCount(header.delegationDepth)) delegationDepth = header.delegationDepth
+    if (isCount(header.version)) formatVersion = header.version
     isSeeded = header.isSeeded === true
     break
   }
@@ -402,6 +415,7 @@ export function foldSessionEvents(
     ...(cwd === undefined ? {} : { cwd }),
     ...(createdAt === undefined ? {} : { createdAt }),
     delegationDepth,
+    ...(formatVersion === undefined ? {} : { formatVersion }),
     turns: folded,
     compactions,
     isSeeded: seeded,

@@ -1,7 +1,8 @@
 # 架构与接入契约
 
 本文记录这个插件**依赖 DSH 的哪些契约**、为什么这样设计,以及 DSH 升级时应该检查什么。
-所有锚点都对 DSH `0.1.5-rc.2` 核对过(路径为 DSH 仓库内路径)。
+所有锚点都对 DSH `0.1.5-rc.2` 与 `0.1.7-rc.2` 两版核对过(路径为 DSH 仓库内路径);
+0.1.7 的复核结论见 §5 第 10 条(会话格式 v4)。
 
 ## 1. 两个产物,两条契约
 
@@ -180,15 +181,28 @@
 前 5 处任一变化,`pnpm run smoke` 会先失败(它断言注册 id、插件形状、两个插槽名与真实算价);
 第 6–9 处会先由 `tsc` 报错(镜像类型),再在真机上表现为统计页报错或行数变少 —— 用 `pnpm run verify:balance` 可直接定位到折叠层。
 
+10. **会话格式 v4(0.1.7-rc.2 复核新增)**:0.1.7 引入 `session-format-v3-to-v4`
+    (工具结果提升为工具角色、重命名生产者来源、补齐中断回合、追加父目录事实)。
+    复核结论:插件**不需要改折算逻辑**——宿主路由走 `sessionPersistence`(与格式无关),
+    而实测同一会话的 v3/v4 两份日志在共同回合上**逐条数字完全一致**;
+    `assistant/message.data.usage`、`message.source.provider|model`、`compaction/summary`、
+    `session/end-seed`、`model/selection` 与顶层 `session` 头字段在 v4 中均保持。
+    唯一受影响的是**诊断脚本的文件名过滤**:v4 会与 v3 并存,只扫 `session.v3.*` 会漏掉正在写入的那份,
+    因此 `verify-balance` / `verify-fold-paths` 都按 `session.v*.jsonl*` 读取所有代际。
+    升级到 0.1.7 时还应顺带确认:`TurnTailChatData.tokenUsage` 仍在
+    (`packages/client/ui-chat/src/client/contract/chat-nodes.ts`),官方胶囊在 0.1.7 起受
+    「性能与用量 = 详细」模式控制,而本插件渲染在 `extraActions`,不受该模式影响。
+
 ## 6. 测试策略
 
 | 层 | 工具 | 覆盖 |
 |---|---|---|
 | 计费纯函数 | `vitest`(`tests/pricing.spec.ts`) | 别名/改路规则、高峰窗口边界(含 12:00、周末、跨时区)、三档金额、混用模型、无路由不猜 |
-| 日志折叠 | `vitest`(`tests/turn-fold.spec.ts`) | 头部/标题、回合窗口、多尝试累加、`message.source` 优先与 `model/selection` 回退、非法用量整条丢弃、无人认领的 usage、`assistant/attempt` 重试、未知事件容错、**压缩折叠(独立计费项 / 自带路由 / 非法用量丢弃 / 无路由不猜)**、**分叉继承段(按接缝跳过 / 只按 handle 切点跳过 / 无接缝整份不计 / 非 seeded 不受影响)** |
+| 日志折叠 | `vitest`(`tests/turn-fold.spec.ts`) | 头部/标题、回合窗口、多尝试累加、`message.source` 优先与 `model/selection` 回退、非法用量整条丢弃、无人认领的 usage、`assistant/attempt` 重试、未知事件容错、**压缩折叠(独立计费项 / 自带路由 / 非法用量丢弃 / 无路由不猜)**、**分叉继承段(按接缝跳过 / 只按 handle 切点跳过 / 无接缝整份不计 / 非 seeded 不受影响)**、**会话格式 v4(顶层 v4 头 / 忽略工具角色与系统消息 / 与 v3 数字一致 / v4 的分叉接缝)** |
 | 统计模型 | `vitest`(`tests/stats-model.spec.ts`) | 日/月键、合计(回复/压缩分开计数、会话数、子代理、未计价、金额、用量)、空选择返回 0、分页(切页/越界夹取/非正数与 NaN/空选择/每页 0 条) |
 | 兜底缓存 | `vitest`(`tests/usage-store.spec.ts`) | 并发三次只发一次请求、TTL 内复用 / 过期重取、`?refresh=1`、失败保留旧数据并记录错误、非 2xx 视为错误、按 `会话+回合` 查找(不串会话、**不取压缩行**)、订阅与退订 |
 | 产物契约 | `node scripts/smoke-client-bundle.mjs` | bundle 注册 id = 包名、工厂返回 `inject`/`apply`、两个插槽各注册一项、导航 label 非空、**两个条目的渲染抛错都被隔离成 null**、胶囊对真实分档算出 `≈¥5`、无路由不渲染、统计页发起宿主请求、**官方用量缺失时首屏不渲染 → 兜底拿到数据后渲染 `≈¥5` → 标题标注为「按日志重算」→ 不借用其他会话的行** |
 | 独立复算 | `node scripts/verify-balance.mjs` | 绕过宿主直读日志复算全部会话累计,并与 API 余额的差值对账(2026-09-11 实测 Δ$0.249 vs 余额 Δ$0.25) |
-| **双入口一致性** | `node scripts/verify-fold-paths.mjs` | 对每份真实日志用两种输入各折一遍(有头部→自行找接缝;无头部+`inheritedEventCount`→路由形态)并逐条比对。0.7.1 曾只在第一种形态下正确,页面仍重复计费;这道门就是为那类「离线通过、真机不一致」而加的 |
+| **双入口一致性** | `node scripts/verify-fold-paths.mjs` | 对每份真实日志(**所有代际**:v3 与 0.1.7 起的 v4 并存)用两种输入各折一遍(有头部→自行找接缝;无头部+`inheritedEventCount`→路由形态)并逐条比对。0.7.1 曾只在第一种形态下正确,页面仍重复计费;这道门就是为那类「离线通过、真机不一致」而加的 |
+| **格式升级对账** | `node scripts/verify-fold-paths.mjs` + 一次性探针 | 0.7.3 适配 0.1.7 时,对同一会话的 v3/v4 两份真实日志逐回合比对:共同回合**全部一致**,v4 只是多了升级后的新回合 —— 这才是「格式升级没有改变历史数字」的证据,而不是口头保证 |
 | 真机 | 手动 | 重启 `dsh web` **并硬刷新浏览器**:核对胶囊与原生用量弹窗的分档一致性、统计页逐条明细与合计 |

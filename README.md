@@ -3,7 +3,7 @@
 <p>
   <a href="https://github.com/AGImentu/dsh-cost-stats/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/AGImentu/dsh-cost-stats/actions/workflows/ci.yml/badge.svg" /></a>
   <a href="https://github.com/AGImentu/dsh-cost-stats/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/AGImentu/dsh-cost-stats" /></a>
-  <img alt="DSH 0.1.5-rc.2" src="https://img.shields.io/badge/DSH-0.1.5--rc.2-4d6bfe" />
+  <img alt="DSH 0.1.5-rc.2 → 0.1.7-rc.2" src="https://img.shields.io/badge/DSH-0.1.5--rc.2%20%E2%86%92%200.1.7--rc.2-4d6bfe" />
   <a href="https://opensource.org/licenses/MIT"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg" /></a>
   <img alt="无内核改动" src="https://img.shields.io/badge/%E6%97%A0%E5%86%85%E6%A0%B8%E6%94%B9%E5%8A%A8-%E5%8F%AA%E7%94%A8%E5%85%AC%E5%BC%80%E6%8F%92%E6%A7%BD-4d6bfe" />
   <img alt="中英双语" src="https://img.shields.io/badge/%E7%95%8C%E9%9D%A2-zh%20%2F%20en-4d6bfe" />
@@ -70,9 +70,11 @@
 
 **前置**:DSH 已能正常运行(`dsh web` 起得来);Node.js ≥ 20,pnpm ≥ 10。
 
-**支持的 DSH 版本**:在 **DSH `0.1.5-rc.2`** 上真机验证。插件只用公开插槽
+**支持的 DSH 版本**:在 **DSH `0.1.5-rc.2` → `0.1.7-rc.2`** 上真机验证(含 0.1.7 引入的
+**会话日志格式 v4**)。插件只用公开插槽
 (`conversation.chat.assistant-actions`、`settings.section`)与平台种子模块(`react` / `react-dom`),
-不 import 任何 DSH 内部包,所以对 DSH 小版本不敏感。
+不 import 任何 DSH 内部包,也不声明 peerDependencies(所以 0.1.7 起的 peer 校验不会禁用本插件),
+对 DSH 小版本不敏感。
 
 > ⚠️ **注意包名**:npm 上另有一个同名老包 `dsh-session-cost`(别的作者,和你这个没关系),
 > 所以本插件从 0.7.0 起改名为 **`dsh-cost-stats`**。安装请认准这个名字。
@@ -285,7 +287,7 @@ node scripts/verify-balance.mjs 2026-09-11T11:07 2026-09-11T12:20
 ```sh
 pnpm install
 pnpm run typecheck   # tsc --noEmit
-pnpm test            # 63 项单测:计费/时段/别名规则 + 日志折叠(含压缩与分叉继承段) + 日历 + 统计与分页 + 兜底缓存
+pnpm test            # 67 项单测:计费/时段/别名规则 + 日志折叠(含压缩、分叉继承段、会话格式 v4) + 日历 + 统计与分页 + 兜底缓存
 pnpm run build       # lib/index.js(host 半边:路由 + 日志折叠) + lib/client.js(浏览器半边)
 pnpm run smoke       # 产物契约冒烟:在 Node 里跑 client.js,验证注册 id / 插件形状 / 两个插槽 / 真实算价 / 抛错隔离 / 宿主请求
 pnpm run verify      # typecheck + test + build + smoke
@@ -399,6 +401,12 @@ pnpm run build && pnpm publish --access public --registry https://registry.npmjs
 - 官方核心的回合用量是「全有或全无」:回合里只要有一次重试请求没回报用量,官方「用量」胶囊就会消失。
   本插件此时改用**宿主侧日志重算**补一个数(标题会写「按日志重算」),但日志里同样缺失的那部分用量,
   会让这个数字**偏低**——它是不显示之外的次优选择,不是等价替代。
+- **会话日志格式 v4**(DSH 0.1.7 起):v4 把工具结果提升为工具角色、重命名生产者来源、补齐中断回合。
+  实测**同一会话的 v3 与 v4 两份日志,共同回合逐条数字完全一致**,因此本插件不需要改折算逻辑:
+  宿主半边本来就走 `sessionPersistence`(与格式无关),两个诊断脚本也已改为读取**所有代际**
+  (`session.v*.jsonl*`),不会因为格式升级而只扫到旧文件。
+- 官方「用量」胶囊在 0.1.7 起只在**「性能与用量 = 详细」**模式下显示;本插件的胶囊渲染在
+  `extraActions`(插件单元格)里,**不受该模式影响**——也就是说关掉详细模式后,官方胶囊会消失而本插件仍在。
 - 极窄视口下胶囊跟随原生 stat pill 的收缩策略(本插件未额外做图标化折叠)。
 
 ## 📄 License

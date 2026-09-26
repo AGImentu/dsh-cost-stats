@@ -58,9 +58,20 @@ function decodeLog(buffer) {
   return Buffer.concat(chunks).toString('utf8')
 }
 
-/** Recursively collect session log files under the DSH home. */
+/**
+ * Recursively collect ONE log per session: its newest format generation.
+ *
+ * DSH keeps released generations and publishes successors next to them (a v3
+ * session gets a v4 file after an upgrade; an old one may still have v2 and v3).
+ * The running plugin reads through `sessionPersistence`, which lists one logical
+ * session per id, so reading every file here would count that session's early
+ * turns twice and inflate the very totals this script exists to check.
+ * @param root - sessions directory.
+ * @returns the log path of each session's current generation.
+ */
 function collectLogs(root) {
-  const found = []
+  /** Directory → { version, path } of the newest generation seen. */
+  const newest = new Map()
   const walk = (dir) => {
     let entries
     try {
@@ -70,12 +81,19 @@ function collectLogs(root) {
     }
     for (const entry of entries) {
       const path = join(dir, entry.name)
-      if (entry.isDirectory()) walk(path)
-      else if (/^session\.v\d+\.jsonl(\.zstd)?$/.test(entry.name)) found.push(path)
+      if (entry.isDirectory()) {
+        walk(path)
+        continue
+      }
+      const match = /^session(?:\.v(\d+))?\.jsonl(?:\.zstd)?$/.exec(entry.name)
+      if (match === null) continue
+      const version = match[1] === undefined ? -1 : Number(match[1])
+      const current = newest.get(dir)
+      if (current === undefined || version > current.version) newest.set(dir, { version, path })
     }
   }
   walk(root)
-  return found
+  return [...newest.values()].map(entry => entry.path)
 }
 
 /**
@@ -104,7 +122,23 @@ let unpriced = 0
 let compactionCount = 0
 let seededSessions = 0
 let inheritedEvents = 0
+const formatCounts = new Map()
 const eventHistogram = new Map()
+
+/**
+ * How many logs of each session-format generation were read.
+ *
+ * Printed because 0.1.7 publishes v4 successors next to the released v3 files:
+ * seeing the mix makes a format upgrade visible instead of silent.
+ * @returns a label such as `v3×12 v4×2 legacy×1`.
+ */
+function formatMix() {
+  if (formatCounts.size === 0) return 'none'
+  return [...formatCounts.entries()]
+    .sort((left, right) => left[0].localeCompare(right[0]))
+    .map(([label, count]) => `${label}×${String(count)}`)
+    .join(' ')
+}
 
 for (const path of logs) {
   let text
@@ -126,6 +160,8 @@ for (const path of logs) {
   }
   const session = foldSessionEvents(path, events)
   if (session.turns.length > 0) sessions += 1
+  const formatLabel = session.formatVersion === undefined ? 'legacy' : `v${String(session.formatVersion)}`
+  formatCounts.set(formatLabel, (formatCounts.get(formatLabel) ?? 0) + 1)
   // A fork's log starts with a copy of its parent's events; those are skipped
   // (the parent's own log already bills them), and the count is reported so the
   // suppression stays visible instead of silent.
@@ -190,6 +226,7 @@ const sum = (rows) => rows.reduce(
 console.log(`repo        : ${repo}`)
 console.log(`sessions dir: ${sessionsRoot}`)
 console.log(`logs found  : ${logs.length} (folded ${sessions} with turns, unreadable ${unreadable})`)
+console.log(`formats     : ${formatMix()}`)
 console.log(`seeded logs : ${seededSessions} fork(s), ${inheritedEvents} inherited events skipped (their parent bills them)`)
 console.log(`replies     : ${turns.length - compactionCount} priced rows + ${compactionCount} compactions, ${unpriced} unpriced\n`)
 

@@ -15,6 +15,9 @@
  * the real logs and fails when they disagree, which is the guard that would have
  * caught it.
  *
+ * It reads EVERY stored generation (v3 and the v4 successors DSH 0.1.7 publishes),
+ * so a format upgrade cannot shrink what this check covers without saying so.
+ *
  * Usage:
  *   node scripts/verify-fold-paths.mjs
  *
@@ -67,7 +70,10 @@ function collectLogs(root) {
     for (const entry of entries) {
       const path = join(dir, entry.name)
       if (entry.isDirectory()) walk(path)
-      else if (/^session\.v3\.jsonl(\.zstd)?$/.test(entry.name)) found.push(path)
+      // Every stored generation, not just the current one: DSH 0.1.7 publishes a
+      // v4 successor next to the released v3 file, so a v3-only glob would check
+      // stale bytes and quietly stop covering the sessions being written today.
+      else if (/^session\.v\d+\.jsonl(\.zstd)?$/.test(entry.name)) found.push(path)
     }
   }
   walk(root)
@@ -144,6 +150,7 @@ for (const path of logs) {
     console.error(`  route: ${shape(route)}`)
   } else {
     console.log(`  ok   ${path.split(/[\\/]/).slice(-2)[0].slice(0, 28).padEnd(30)} `
+      + `${(raw.formatVersion === undefined ? 'legacy' : `v${String(raw.formatVersion)}`).padEnd(7)} `
       + `seeded=${String(header?.isSeeded === true).padEnd(5)} inherited=${String(raw.inheritedEvents).padStart(5)} `
       + `turns=${String(raw.turns.length).padStart(3)} compactions=${raw.compactions.length}`)
   }
