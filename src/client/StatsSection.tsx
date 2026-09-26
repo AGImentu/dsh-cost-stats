@@ -21,6 +21,9 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import { formatMoney } from '../pricing.ts'
 import { USAGE_ROUTE } from '../routes.ts'
 import type { TurnCostRow, UsagePayload } from '../rows.ts'
+import type { BalancePayload } from '../balance.ts'
+import * as balanceStore from './balance-store.ts'
+import { BalanceChip } from './BalanceChip.tsx'
 import type { CostStatsProps, Translator } from './contract.ts'
 import { fallbackTranslator } from './locales.ts'
 import { DayPicker, MonthPicker } from './Pickers.tsx'
@@ -75,6 +78,9 @@ export function CostStatsSection({ t }: CostStatsProps): ReactNode {
   const [month, setMonth] = useState<string | undefined>(undefined)
   /** 1-based page inside the current selection. */
   const [page, setPage] = useState(1)
+  /** The account balance. Seeded from the store so a reopen never flashes empty. */
+  const [balance, setBalance] = useState<BalancePayload | undefined>(() => balanceStore.snapshot())
+  const [balanceLoading, setBalanceLoading] = useState(true)
 
   /**
    * Load the payload from the host route.
@@ -96,7 +102,26 @@ export function CostStatsSection({ t }: CostStatsProps): ReactNode {
       })
   }, [])
 
-  useEffect(() => { load(false) }, [load])
+  /**
+   * Query the DeepSeek balance through the host.
+   *
+   * The host resolves the API key from DSH's credential service; the page never
+   * sees it. `force` is what the page's refresh action passes, so a deliberate
+   * refresh also refreshes the money rather than replaying a cached answer.
+   * @param force - bypass the client and host caches.
+   */
+  const loadBalance = useCallback((force = false): void => {
+    setBalanceLoading(true)
+    void balanceStore.load(force).then((next) => {
+      setBalance(next)
+      setBalanceLoading(false)
+    })
+  }, [])
+
+  // Every mount queries: opening the page is the user asking "how much is
+  // left?". A very recent answer is reused, which is what keeps a reopen from
+  // hammering DeepSeek's rate limit.
+  useEffect(() => { load(false); loadBalance(false) }, [load, loadBalance])
 
   const rows = payload?.rows ?? []
   const dataDays = useMemo(() => new Set(rows.map(row => dayKeyOf(row.at))), [rows])
@@ -130,8 +155,11 @@ export function CostStatsSection({ t }: CostStatsProps): ReactNode {
   return (
     <div className={CLASS.stats} data-cost-stats-page>
       <div className={CLASS.statsHead}>
-        <div className={CLASS.statsTitle}>{tr('stats.title')}</div>
-        <div className={CLASS.statsSubtitle}>{tr('stats.subtitle')}</div>
+        <div className={CLASS.statsHeadText}>
+          <div className={CLASS.statsTitle}>{tr('stats.title')}</div>
+          <div className={CLASS.statsSubtitle}>{tr('stats.subtitle')}</div>
+        </div>
+        <BalanceChip payload={balance} loading={balanceLoading} tr={tr} />
       </div>
 
       <div className={CLASS.toolbar}>
@@ -156,7 +184,11 @@ export function CostStatsSection({ t }: CostStatsProps): ReactNode {
             {tr('stats.scope.clear')}
           </button>
         )}
-        <button type="button" className={CLASS.pickerAction} onClick={() => { load(true) }}>
+        <button
+          type="button"
+          className={CLASS.pickerAction}
+          onClick={() => { load(true); loadBalance(true) }}
+        >
           {tr('stats.refresh')}
         </button>
       </div>

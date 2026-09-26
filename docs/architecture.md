@@ -105,6 +105,31 @@
                      └─> client:fetch → stats-model(日/月键 + 合计 + 分页)→ StatsSection
 ```
 
+### 3.3 标题右侧的余额(唯一会用到凭据的路径)
+
+```
+页面每次挂载(打开设置 → 费用统计)
+   └─> client/balance-store.ts:load()  ← 15 秒内复用,并发合并
+         └─> GET /cost-stats/balance
+               └─> host/balance-route.ts
+                     ├─ isLocalRequest():peer 地址或 Host 非本机 → 403,且不碰凭据
+                     ├─ ctx.credentials.resolve('DEEPSEEK_API_KEY')  ← **现取现用,不落盘、不缓存、不记录**
+                     ├─ GET https://api.deepseek.com/user/balance(8 秒超时)
+                     └─ host/balance.ts:parseBalance() → **只回数字**
+                           └─> client/BalanceChip.tsx:余额 $5.24 / 查询中 / 未配置 / 失败
+```
+
+- **为什么 key 不落插件**:插件是公开仓库,任何"把 key 存进插件配置"的设计都会随仓库泄露。
+  这里 key 的唯一来源是 DSH 自己的凭据服务(与模型配置同一份),宿主半边每次查询现场取用,
+  用完立刻随作用域释放;`lib/` 产物、插件配置文件、路由响应、日志里都没有它。
+- **为什么只对本机开放**:这是唯一触碰凭据的路由。判定是"一侧保守":能确证非本机(peer 地址或
+  `Host` 头)就 403,而拿不到这两个信息的未知形态仍放行 —— 否则会在 DSH 的小版本升级中把功能弄坏,
+  而 DSH 默认只监听回环地址这件事本身已经挡住了远程调用。
+- **为什么有 15 秒缓存**:打开设置页是人的动作,人可以在十秒里开五次。DeepSeek 的余额接口有速率限制,
+  插件把它吸收掉而不是转发出去;"亲自点刷新"则用 `?refresh=1` 同时绕过页面与宿主两层缓存。
+- **失败也要可读**:未配置 key、凭据服务不可用、401/403、网络失败、无法解析,各自有原因码与中文说明;
+  上一次成功的结果会在刷新失败时继续显示,而不是把余额变成空白或 0。
+
 - **为什么在宿主侧**:逐条历史只存在于持久化日志里;浏览器只有当前会话已加载的窗口。
   宿主读日志是唯一能覆盖"所有会话、全部历史"的位置,而且不需要激活任何冷会话。
 - **逐次精确**:模型取该次回复的 `message.source.provider/model`(缺失时回退到最近一条 `model/selection`),
@@ -178,8 +203,16 @@
    **`compaction/summary.data.usage` + `.provider` + `.model` 与事件的 `time`**(压缩计费项的来源;
    事件本身没有 `data.turn`,所以窗口只能取 `event.time`)。
 
+11. **凭据服务(0.8.0 新增)**:`ctx.credentials.resolve(ref) → { value, source } | undefined`,其中 `ref` 是
+    "POSIX 环境变量名"形式的引用(`packages/credentials/credentials/src/types.ts` 的 `CredentialRef`),
+    DeepSeek 用的名字就是 **`DEEPSEEK_API_KEY`**;默认实现 `credentials-local` 存于本机私有 YAML,
+    **环境变量优先**。同一族还有 `describe(ref)`(只回答"配了没",永不返回值)与 `set/unset`。
+    本插件只读、只 `resolve`,并且**故意不把 `credentials` 写进 `inject`**:注入失败会导致整个插件不挂载,
+    而余额只是页面上的一个装饰 —— 少了它应该降级显示"读不到 key",而不是让统计页一起消失。
+
 前 5 处任一变化,`pnpm run smoke` 会先失败(它断言注册 id、插件形状、两个插槽名与真实算价);
-第 6–9 处会先由 `tsc` 报错(镜像类型),再在真机上表现为统计页报错或行数变少 —— 用 `pnpm run verify:balance` 可直接定位到折叠层。
+第 6–9 处会先由 `tsc` 报错(镜像类型),再在真机上表现为统计页报错或行数变少 —— 用 `pnpm run verify:balance` 可直接定位到折叠层;
+第 11 处(凭据服务)失效时,余额胶囊会显示"未配置 API key",统计页其余部分照常工作。
 
 10. **会话格式 v4(0.1.7-rc.2 复核新增)**:0.1.7 引入 `session-format-v3-to-v4`
     (工具结果提升为工具角色、重命名生产者来源、补齐中断回合、追加父目录事实)。
@@ -201,7 +234,8 @@
 | 日志折叠 | `vitest`(`tests/turn-fold.spec.ts`) | 头部/标题、回合窗口、多尝试累加、`message.source` 优先与 `model/selection` 回退、非法用量整条丢弃、无人认领的 usage、`assistant/attempt` 重试、未知事件容错、**压缩折叠(独立计费项 / 自带路由 / 非法用量丢弃 / 无路由不猜)**、**分叉继承段(按接缝跳过 / 只按 handle 切点跳过 / 无接缝整份不计 / 非 seeded 不受影响)**、**会话格式 v4(顶层 v4 头 / 忽略工具角色与系统消息 / 与 v3 数字一致 / v4 的分叉接缝)** |
 | 统计模型 | `vitest`(`tests/stats-model.spec.ts`) | 日/月键、合计(回复/压缩分开计数、会话数、子代理、未计价、金额、用量)、空选择返回 0、分页(切页/越界夹取/非正数与 NaN/空选择/每页 0 条) |
 | 兜底缓存 | `vitest`(`tests/usage-store.spec.ts`) | 并发三次只发一次请求、TTL 内复用 / 过期重取、`?refresh=1`、失败保留旧数据并记录错误、非 2xx 视为错误、按 `会话+回合` 查找(不串会话、**不取压缩行**)、订阅与退订 |
-| 产物契约 | `node scripts/smoke-client-bundle.mjs` | bundle 注册 id = 包名、工厂返回 `inject`/`apply`、两个插槽各注册一项、导航 label 非空、**两个条目的渲染抛错都被隔离成 null**、胶囊对真实分档算出 `≈¥5`、无路由不渲染、统计页发起宿主请求、**官方用量缺失时首屏不渲染 → 兜底拿到数据后渲染 `≈¥5` → 标题标注为「按日志重算」→ 不借用其他会话的行** |
+| 产物契约 | `node scripts/smoke-client-bundle.mjs` | bundle 注册 id = 包名、工厂返回 `inject`/`apply`、两个插槽各注册一项、导航 label 非空、**两个条目的渲染抛错都被隔离成 null**、胶囊对真实分档算出 `≈¥5`、无路由不渲染、统计页发起宿主请求、**官方用量缺失时首屏不渲染 → 兜底拿到数据后渲染 `≈¥5` → 标题标注为「按日志重算」→ 不借用其他会话的行**、**统计页挂载即请求余额路由 → 重开页面时余额数字已就位 → 余额文本里不出现任何 `sk-…` 形状的字符串** |
+| 余额与凭据 | `vitest`(`tests/balance.spec.ts`、`tests/api-key.spec.ts`) | 金额字符串解析与非法条目丢弃、`is_available: false` 传递、币种齐全、仅本机守卫(回环各种写法 / 外部 peer / 外部 Host / 未知形态)、凭据缺失与抛错的降级、**key 只出现在 Authorization 头且失败信息里不含 key**、缓存与 `?refresh=1`、刷新失败时保留上次好数据、非本机请求 403 且不调用凭据服务 |
 | 独立复算 | `node scripts/verify-balance.mjs` | 绕过宿主直读日志复算全部会话累计,并与 API 余额的差值对账(2026-09-11 实测 Δ$0.249 vs 余额 Δ$0.25) |
 | **双入口一致性** | `node scripts/verify-fold-paths.mjs` | 对每份真实日志(**所有代际**:v3 与 0.1.7 起的 v4 并存)用两种输入各折一遍(有头部→自行找接缝;无头部+`inheritedEventCount`→路由形态)并逐条比对。0.7.1 曾只在第一种形态下正确,页面仍重复计费;这道门就是为那类「离线通过、真机不一致」而加的 |
 | **格式升级对账** | `node scripts/verify-fold-paths.mjs` + 一次性探针 | 0.7.3 适配 0.1.7 时,对同一会话的 v3/v4 两份真实日志逐回合比对:共同回合**全部一致**,v4 只是多了升级后的新回合 —— 这才是「格式升级没有改变历史数字」的证据,而不是口头保证 |

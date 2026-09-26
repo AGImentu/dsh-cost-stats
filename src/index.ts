@@ -1,25 +1,32 @@
 /**
  * Host half of dsh-cost-stats.
  *
- * Two jobs:
+ * Three jobs:
  *
  * 1. be a live Loader row so `dsh-client-modules` discovers this package's
  *    `dsh.client` declaration and composes `lib/client.js` into the browser
  *    boot graph;
  * 2. serve the statistics page's data: `GET /cost-stats/usage` folds every
- *    stored session log into per-reply priced rows (`CostStatsIndex`).
+ *    stored session log into per-reply priced rows (`CostStatsIndex`);
+ * 3. serve the account's balance: `GET /cost-stats/balance` resolves the
+ *    harness's own `DEEPSEEK_API_KEY` from the credential service, asks DeepSeek
+ *    once, and returns numbers only (`host/balance-route.ts`). The key is never
+ *    stored by the plugin, never sent to the page, and never logged — which is
+ *    what makes publishing this plugin safe.
  *
- * The route is a plain same-origin JSON endpoint registered through
- * `ctx.webServer`, so it rides the app's existing browser authentication and
- * needs no separate token, no RPC envelope and no client half cooperation beyond
+ * Both routes are plain same-origin JSON endpoints registered through
+ * `ctx.webServer`, so they ride the app's existing browser authentication and
+ * need no separate token, no RPC envelope and no client half cooperation beyond
  * a `fetch`. Nothing here touches the session loop, and a failure is contained:
- * the handler answers 500 with a message instead of throwing into the webserver.
+ * each handler answers with a payload the page can render instead of throwing
+ * into the webserver.
  *
  * @module dsh-cost-stats
  */
 
 import type { HostContextLike, ServerResponseLike } from './host/contract.ts'
 import { CostStatsIndex } from './host/cost-stats-index.ts'
+import { registerBalanceRoute } from './host/balance-route.ts'
 import { USAGE_ROUTE } from './routes.ts'
 
 /** Cordis plugin name, matching the package name and the patched row id. */
@@ -56,7 +63,12 @@ function wantsRefresh(req: unknown): boolean {
 }
 
 /**
- * Mount the plugin: one exact JSON route over the session cost index.
+ * Mount the plugin: the usage route plus the balance readout.
+ *
+ * `credentials` is deliberately NOT in `inject`: the balance is a decoration on
+ * the statistics page, and a host without that provider should still get the
+ * page (the readout degrades to "cannot read the key") instead of losing the
+ * plugin entirely. The service is looked up lazily per request.
  * @param ctx - host-side cordis context.
  * @returns nothing.
  */
@@ -75,4 +87,6 @@ export function apply(ctx: HostContextLike): void {
       }
     },
   }), 'dsh-cost-stats: usage route')
+
+  ctx.effect(() => registerBalanceRoute(ctx), 'dsh-cost-stats: balance route')
 }

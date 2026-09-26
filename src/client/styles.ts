@@ -38,6 +38,9 @@ export const CLASS = {
   reasoning: 'dsh-cost-stats__reasoning',
   stats: 'dsh-cost-stats__stats',
   statsHead: 'dsh-cost-stats__statsHead',
+  statsHeadText: 'dsh-cost-stats__statsHeadText',
+  balance: 'dsh-cost-stats__balance',
+  balanceValue: 'dsh-cost-stats__balanceValue',
   statsTitle: 'dsh-cost-stats__statsTitle',
   statsSubtitle: 'dsh-cost-stats__statsSubtitle',
   toolbar: 'dsh-cost-stats__toolbar',
@@ -242,9 +245,51 @@ export const STYLES = `
 }
 
 .${CLASS.statsHead} {
+  /* Title block on the left, the account's balance on the right. */
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.${CLASS.statsHeadText} {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-width: 0;
+}
+
+/* Balance readout: numbers only, and always the same two decimals the API uses. */
+.${CLASS.balance} {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.${CLASS.balance} svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  opacity: 0.75;
+}
+
+.${CLASS.balanceValue} {
+  color: var(--dsw-alias-label-primary);
+}
+
+.${CLASS.balance} [data-tone='warn'] {
+  color: var(--dsw-alias-label-tertiary);
 }
 
 .${CLASS.statsTitle} {

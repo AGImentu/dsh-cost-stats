@@ -144,6 +144,14 @@ const foldRow = {
 }
 const usagePayload = { generatedAt: foldRow.at, stored: 1, read: 1, skipped: 0, rows: [foldRow] }
 
+/** The balance route's canned answer, in the shape the host sends. */
+const balancePayload = {
+  ok: true,
+  available: true,
+  infos: [{ currency: 'USD', total: 5.24, granted: 0, toppedUp: 5.24 }],
+  at: foldRow.at,
+}
+
 const loaded = []
 const styleTags = []
 const fetched = []
@@ -160,12 +168,13 @@ const sandbox = {
   JSON,
   String,
   fetch: (url) => {
-    fetched.push(String(url))
+    const target = String(url)
+    fetched.push(target)
     return Promise.resolve({
       ok: true,
       status: 200,
       statusText: 'OK',
-      json: async () => usagePayload,
+      json: async () => (target.includes('/cost-stats/balance') ? balancePayload : usagePayload),
     })
   },
   document: {
@@ -300,6 +309,12 @@ check(`stats page opens on today's replies (field shows ${todayKey}, got "${stat
 check(`stats page fetches the plugin host route (got ${JSON.stringify(fetched)})`,
   fetched.includes('/cost-stats/usage'))
 
+// 6b. Balance readout: opening the page asks the host (no button to press). The
+// rendered number is asserted below, after the module store has settled, because
+// this miniature renderer has no re-render pass.
+check(`stats page asks the host for the balance on mount (got ${JSON.stringify(fetched)})`,
+  fetched.includes('/cost-stats/balance'))
+
 // 7. Fallback path: core withheld the turn's usage, the host fold still prices it.
 const withheldNode = {
   kind: 'turn-tail',
@@ -325,6 +340,14 @@ check('the fallback chip is labelled as recomputed, not as the official total',
 
 const otherSession = renderTree(chipEntry.component({ ...withheldProps, sessionId: 's9' }))
 check('the fallback never borrows another session\'s reply', otherSession === null)
+
+// 8. The balance number itself, now that the store has settled: a reopen starts
+// from the store's snapshot, so the page shows money instead of a spinner.
+const reopened = collectText(renderTree(statsEntry.component({ t: undefined }))).join(' ')
+check(`stats page shows the queried balance on reopen (got "${reopened.slice(0, 80)}")`,
+  reopened.includes('余额 $5.24'))
+check('the balance readout never carries a credential-shaped string',
+  !/sk-[A-Za-z0-9_-]{8,}/.test(reopened))
 
 if (failures.length > 0) {
   console.error(`smoke: ${failures.length} check(s) failed`)

@@ -87,6 +87,19 @@ export interface WebRouteLike {
   readonly handler: (req: unknown, res: ServerResponseLike) => Promise<void> | void
 }
 
+/**
+ * The incoming request, narrowed to what the plugin reads.
+ *
+ * Only the balance route needs it: the peer address and the `Host` header are
+ * what decide whether a caller may read a credential-backed endpoint.
+ */
+export interface ServerRequestLike {
+  readonly method?: string
+  readonly url?: string
+  readonly headers?: Readonly<Record<string, string | readonly string[] | undefined>>
+  readonly socket?: { readonly remoteAddress?: string }
+}
+
 /** The webserver service slice this plugin uses. */
 export interface WebServerLike {
   /**

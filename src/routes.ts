@@ -8,3 +8,11 @@
 
 /** Exact webserver path that serves the aggregated per-reply usage payload. */
 export const USAGE_ROUTE = '/cost-stats/usage'
+
+/**
+ * Exact webserver path that serves the DeepSeek account balance.
+ *
+ * Host-only by design: it is the one route that uses a credential, so it answers
+ * local callers only and its payload never contains the key.
+ */
+export const BALANCE_ROUTE = '/cost-stats/balance'
