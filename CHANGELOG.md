@@ -2,6 +2,44 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 与语义化版本。
 
+## [0.8.1] - 2026-09-27
+
+### 修复:0.8.0 的余额一直显示「余额查询失败」
+
+- **根因(cordis 的规则,不是 DeepSeek 的问题)**:cordis 的 context 是一个 Proxy,它的 `get` 陷阱对
+  **未被本插件 `inject` 声明的服务**会直接抛错:
+  ```
+  Error: cannot get property "credentials" without inject     (vendor/cordis/src/reflect.ts:144)
+  ```
+  0.8.0 用了最自然的写法 `ctx.credentials` 去读凭据服务,而这个读取发生在 try/catch **之外**,
+  异常一路逃到路由的兜底分支,页面就只看到"余额查询失败"。**DSH 里 `credentials` 由 `credentials-local`
+  这个兄弟插件提供、不是根提供的**,所以属性访问必然踩到这条规则。
+- **修法**:改用 cordis 自己的**非严格查询** `ctx.get('credentials', false)`(miss 时返回 `undefined` 而不抛错),
+  并保留 `ctx.reflect.get(...)` 与带 try/catch 的属性访问作为后备 —— 三种取法依次尝试,任何一种可用即可。
+  仍然**不把 `credentials` 写进 `inject`**(否则宿主没有该服务时整个插件都不挂载)。
+- **用真实 cordis 运行时把四种取法实测了一遍**(服务由兄弟插件提供,即 DSH 的真实形态):
+
+  | 取法 | 结果 |
+  | --- | --- |
+  | `ctx.credentials`(裸属性) | ❌ 抛错 `cannot get property "credentials" without inject` |
+  | `ctx.get('credentials', false)` | ✅ 拿到服务 |
+  | `ctx.reflect.get('credentials', false)` | ✅ 拿到服务 |
+  | `ctx.inject(['credentials'], …)` | ✅ 拿到服务(本版未采用,保持实现极简) |
+
+  并做了端到端验证:**真实 cordis 运行时 + 真实凭据 + 真实 DeepSeek 接口 → HTTP 200,
+  返回 `{ok:true, available:true, infos:[{currency:"USD", …}]}`,响应体里不含 key**。
+- **失败信息不再"沉默"**:兜底分支现在把错误消息写进宿主日志(`ctx.logger.warn`),并在页面的
+  失败原因里带上它 —— 这次正是因为原始实现把异常吞成一句"未预期的错误",多花了一轮排查。
+- **新增 4 项单测**专门盯这个坑:属性访问抛错的 context 必须降级为原因码而不是抛异常、
+  `ctx.get` 优先于抛错的属性、`ctx.reflect.get` 作为后备、以及传给 cordis 的 `strict` 参数必须是 `false`。
+
+### 体验:余额胶囊变成按钮(任何状态都能点一下重查)
+
+- 胶囊现在**始终是一个 `<button>`**:没数据时显示「查询余额」,失败时显示「余额查询失败 · 点击重试」,
+  成功时显示金额 —— 点一下即**强制重查**(带 `?refresh=1`,绕过页面与宿主两层缓存),悬停有提示。
+- 失败标签按原因区分,不用悬停也能看懂:「未配置 API key」「余额仅本机可查」「余额查询失败 · 点击重试」。
+- 自动查询仍然保留(打开页面就查一次),所以"打开即见余额"与"点一下就重查"两者都有。
+
 ## [0.8.0] - 2026-09-26
 
 ### 新增:统计页显示 DeepSeek 账号余额(API key 不落插件)

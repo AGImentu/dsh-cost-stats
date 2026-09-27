@@ -259,7 +259,7 @@ export const STYLES = `
   min-width: 0;
 }
 
-/* Balance readout: numbers only, and always the same two decimals the API uses. */
+/* Balance readout: a button in every state, so "try again" is always one click. */
 .${CLASS.balance} {
   display: inline-flex;
   flex: none;
@@ -270,11 +270,22 @@ export const STYLES = `
   border-radius: 999px;
   background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-secondary);
+  font-family: inherit;
   font-size: 12px;
   line-height: 18px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  cursor: pointer;
+}
+
+.${CLASS.balance}:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.${CLASS.balance}:disabled {
   cursor: default;
+  opacity: 0.7;
 }
 
 .${CLASS.balance} svg {

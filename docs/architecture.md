@@ -203,12 +203,21 @@
    **`compaction/summary.data.usage` + `.provider` + `.model` 与事件的 `time`**(压缩计费项的来源;
    事件本身没有 `data.turn`,所以窗口只能取 `event.time`)。
 
-11. **凭据服务(0.8.0 新增)**:`ctx.credentials.resolve(ref) → { value, source } | undefined`,其中 `ref` 是
+11. **凭据服务(0.8.0 新增,0.8.1 修正取法)**:`ctx.credentials.resolve(ref) → { value, source } | undefined`,其中 `ref` 是
     "POSIX 环境变量名"形式的引用(`packages/credentials/credentials/src/types.ts` 的 `CredentialRef`),
     DeepSeek 用的名字就是 **`DEEPSEEK_API_KEY`**;默认实现 `credentials-local` 存于本机私有 YAML,
     **环境变量优先**。同一族还有 `describe(ref)`(只回答"配了没",永不返回值)与 `set/unset`。
-    本插件只读、只 `resolve`,并且**故意不把 `credentials` 写进 `inject`**:注入失败会导致整个插件不挂载,
-    而余额只是页面上的一个装饰 —— 少了它应该降级显示"读不到 key",而不是让统计页一起消失。
+
+    ⚠️ **取法有坑(0.8.1 踩过)**:cordis 的 context 是 Proxy,它的 `get` 陷阱对**未被本插件 `inject` 声明的服务**
+    会抛 `cannot get property "<name>" without inject`(`vendor/cordis/src/reflect.ts:144`)。
+    DSH 里 `credentials` 由兄弟插件 `credentials-local` 提供,所以 `ctx.credentials` 这种自然写法**必然抛错**。
+    非抛错的取法是 **`ctx.get(name, false)`**(`ReflectService.get` 的非严格模式,miss 时返回 `undefined`),
+    其次是 `ctx.reflect.get(name, false)`。本插件三种依次尝试,并**故意不把 `credentials` 写进 `inject`**:
+    注入失败会导致整个插件不挂载,而余额只是页面上的一个装饰 —— 少了它应该降级显示"读不到 key",
+    而不是让统计页一起消失。
+
+    实测(真实 cordis 运行时、服务由兄弟插件提供):裸属性访问抛错;`ctx.get` / `ctx.reflect.get` / `ctx.inject` 均可;
+    端到端(真实凭据 + 真实接口)HTTP 200 且响应体不含 key。
 
 前 5 处任一变化,`pnpm run smoke` 会先失败(它断言注册 id、插件形状、两个插槽名与真实算价);
 第 6–9 处会先由 `tsc` 报错(镜像类型),再在真机上表现为统计页报错或行数变少 —— 用 `pnpm run verify:balance` 可直接定位到折叠层;

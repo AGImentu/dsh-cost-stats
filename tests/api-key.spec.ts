@@ -69,6 +69,56 @@ describe('readApiKey', () => {
     expect(credentialsOf(ctx)).toBeDefined()
     expect(await readApiKey(ctx)).toEqual({ ok: true, key: 'sk-via-get' })
   })
+
+  it('survives a cordis context that THROWS on an uninjected service property', async () => {
+    // The 0.8.0 bug: cordis's proxy get-trap raises
+    // `cannot get property "credentials" without inject` for any service the
+    // plugin did not declare in `inject`, and the bare `ctx.credentials` read sat
+    // outside the guard — the page showed "余额查询失败" for a thrown lookup.
+    const throwing = new Proxy({}, {
+      get: (_target, prop) => {
+        if (prop === 'get') return undefined
+        throw new Error(`cannot get property "${String(prop)}" without inject`)
+      },
+    })
+    expect(credentialsOf(throwing)).toBeUndefined()
+    // Crucially: a reason code, not an escaping exception.
+    expect(await readApiKey(throwing)).toEqual({ ok: false, reason: 'credentials-unavailable' })
+  })
+
+  it('prefers a working ctx.get over a throwing property', async () => {
+    const service = { resolve: async () => ({ value: 'sk-from-get' }) }
+    const ctx = {
+      get: (name: string) => (name === 'credentials' ? service : undefined),
+    }
+    // A context where the property probe WOULD throw (no `credentials` own key).
+    expect(await readApiKey(ctx)).toEqual({ ok: true, key: 'sk-from-get' })
+  })
+
+  it('passes strict=false to the cordis lookup so an inactive service is not required', async () => {
+    const calls: unknown[][] = []
+    const ctx = {
+      get: (...args: unknown[]) => {
+        calls.push(args)
+        return { resolve: async () => ({ value: 'sk-test' }) }
+      },
+    }
+    await readApiKey(ctx)
+    expect(calls[0]).toEqual(['credentials', false])
+  })
+
+  it('falls back to ctx.reflect.get when a throwing property comes first', async () => {
+    const service = { resolve: async () => ({ value: 'sk-from-reflect' }) }
+    const reflect = { get: (name: string, strict?: boolean) => (name === 'credentials' && strict === false ? service : undefined) }
+    const ctx = new Proxy({ reflect } as Record<string, unknown>, {
+      get: (target, prop) => {
+        if (prop === 'reflect') return target.reflect
+        // `get` and `credentials` both unavailable/illegal here.
+        throw new Error(`cannot get property "${String(prop)}" without inject`)
+      },
+    })
+    expect(await readApiKey(ctx)).toEqual({ ok: true, key: 'sk-from-reflect' })
+  })
 })
 
 describe('readBalance', () => {

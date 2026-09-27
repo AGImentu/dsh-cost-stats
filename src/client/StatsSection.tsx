@@ -159,7 +159,12 @@ export function CostStatsSection({ t }: CostStatsProps): ReactNode {
           <div className={CLASS.statsTitle}>{tr('stats.title')}</div>
           <div className={CLASS.statsSubtitle}>{tr('stats.subtitle')}</div>
         </div>
-        <BalanceChip payload={balance} loading={balanceLoading} tr={tr} />
+        <BalanceChip
+          payload={balance}
+          loading={balanceLoading}
+          onQuery={() => { loadBalance(true) }}
+          tr={tr}
+        />
       </div>
 
       <div className={CLASS.toolbar}>

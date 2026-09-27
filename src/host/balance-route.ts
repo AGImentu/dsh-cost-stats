@@ -156,12 +156,16 @@ export function registerBalanceRoute(ctx: HostContextLike): () => void {
     kind: 'exact',
     path: BALANCE_ROUTE,
     handler: (req, res) => {
-      handleBalanceRequest(ctx, req as ServerRequestLike, res).catch(() => {
+      handleBalanceRequest(ctx, req as ServerRequestLike, res).catch((error: unknown) => {
         // Any escape hatch still answers, so the page shows a state instead of
-        // hanging; the failure is deliberately not logged with details.
+        // hanging. The MESSAGE is logged (never a key: nothing here holds one),
+        // because the first release of this route swallowed a thrown service
+        // lookup into "unexpected error" and cost a round trip to diagnose.
+        const message = error instanceof Error ? error.message : String(error)
+        ctx.logger?.warn(`dsh-cost-stats: balance route failed: ${message}`)
         res.statusCode = 200
         res.setHeader('content-type', 'application/json; charset=utf-8')
-        res.end(JSON.stringify(failure('network', '查询余额时发生未预期的错误')))
+        res.end(JSON.stringify(failure('network', `查询余额时发生未预期的错误:${message}`)))
       })
     },
   })

@@ -39,23 +39,57 @@ export type ApiKeyResult =
   | { readonly ok: false, readonly reason: ApiKeyFailure }
 
 /**
+ * The context shapes this module probes.
+ *
+ * cordis resolves services through a Proxy whose `get` trap THROWS
+ * `cannot get property "<name>" without inject` for any service the calling
+ * plugin did not declare in `inject` (see `vendor/cordis/src/reflect.ts`).
+ * 0.8.0 shipped with a bare `ctx.credentials` read and died on exactly that:
+ * the page showed "余额查询失败" while the real cause was a thrown lookup.
+ * Every access below is therefore both guarded and non-strict.
+ */
+interface ProbeContext {
+  /** cordis's service lookup: `get(name, strict)`, which returns undefined on a miss. */
+  get?: (name: string, strict?: boolean) => unknown
+  readonly reflect?: { get?: (name: string, strict?: boolean) => unknown }
+  readonly credentials?: unknown
+}
+
+/** Whether a value looks like the credential service. */
+function isCredentials(value: unknown): value is CredentialsLike {
+  return value !== null && typeof value === 'object'
+    && typeof (value as CredentialsLike).resolve === 'function'
+}
+
+/**
  * Reach the credential service without making it a hard dependency.
  *
  * `inject: ['credentials']` would refuse to mount this plugin at all on a host
  * without that provider — the statistics page would vanish because a decoration
- * on it could not read a key. Reading the service lazily keeps the page working
- * and degrades the balance readout instead.
+ * on it could not read a key. Instead the service is looked up per request, and
+ * the lookup prefers cordis's own non-throwing form (`ctx.get(name, false)`);
+ * the plain property read stays as a last resort inside a guard, because it is
+ * the shape that works on a context that HAS injected the service.
  * @param ctx - host context, possibly carrying the service.
  * @returns the service, or undefined.
  */
 export function credentialsOf(ctx: object): CredentialsLike | undefined {
-  const direct = (ctx as { credentials?: CredentialsLike }).credentials
-  if (direct !== undefined && typeof direct.resolve === 'function') return direct
-  const get = (ctx as { get?: (name: string) => unknown }).get
-  if (typeof get !== 'function') return undefined
-  const viaGet = get.call(ctx, 'credentials')
-  if (viaGet !== undefined && typeof (viaGet as CredentialsLike).resolve === 'function') {
-    return viaGet as CredentialsLike
+  const probe = ctx as ProbeContext
+  const attempts: readonly (() => unknown)[] = [
+    () => (typeof probe.get === 'function' ? probe.get.call(ctx, 'credentials', false) : undefined),
+    () => (typeof probe.reflect?.get === 'function'
+      ? probe.reflect.get.call(probe.reflect, 'credentials', false)
+      : undefined),
+    () => probe.credentials,
+  ]
+  for (const attempt of attempts) {
+    try {
+      const candidate = attempt()
+      if (isCredentials(candidate)) return candidate
+    } catch {
+      // A throwing accessor (an uninjected cordis service) only means "not via
+      // this route"; the next attempt may still find the service.
+    }
   }
   return undefined
 }

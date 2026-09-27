@@ -50,36 +50,51 @@ function WalletIcon(): ReactNode {
 
 /**
  * The chip itself.
- * @param props - the payload, whether a query is in flight, and the translator.
+ *
+ * It is a BUTTON in every state: a failed read, or a page opened before the key
+ * was configured, is one click away from a new attempt — which is what a balance
+ * readout needs when the network, the key or the harness is what just changed.
+ * @param props - the payload, whether a query is in flight, the query action and
+ * the translator.
  * @returns the readout.
  */
 export function BalanceChip(props: {
   payload: BalancePayload | undefined
   loading: boolean
+  onQuery: () => void
   tr: Translator
 }): ReactNode {
-  const { payload, loading, tr } = props
+  const { payload, loading, onQuery, tr } = props
+  const hint = tr('stats.balance.hint')
 
-  if (loading && payload === undefined) {
-    return (
-      <span className={CLASS.balance} title={tr('stats.balance.hint')}>
-        <WalletIcon />
-        <span data-tone="warn">{tr('stats.balance.loading')}</span>
+  /** One button in every state, so the affordance never moves under the pointer. */
+  const button = (label: string, tone: 'value' | 'warn', title: string): ReactNode => (
+    <button type="button" className={CLASS.balance} title={title} onClick={onQuery} disabled={loading}>
+      <WalletIcon />
+      <span
+        className={tone === 'value' ? CLASS.balanceValue : undefined}
+        data-tone={tone === 'warn' ? 'warn' : undefined}
+      >
+        {label}
       </span>
-    )
-  }
+    </button>
+  )
 
-  if (payload === undefined || !payload.ok) {
-    const reason = payload?.reason
-    const label = reason === 'no-key' || reason === 'credentials-unavailable'
+  if (loading && payload === undefined) return button(tr('stats.balance.loading'), 'warn', hint)
+
+  if (payload === undefined) return button(tr('stats.balance.query'), 'warn', hint)
+
+  if (!payload.ok) {
+    // A configuration problem reads differently from a failed request, and the
+    // short label says which — so a broken setup is visible without a hover.
+    const label = payload.reason === 'no-key' || payload.reason === 'credentials-unavailable'
       ? tr('stats.balance.noKey')
-      : tr('stats.balance.failed')
-    return (
-      <span className={CLASS.balance} title={payload?.message ?? tr('stats.balance.hint')}>
-        <WalletIcon />
-        <span data-tone="warn">{label}</span>
-      </span>
-    )
+      : payload.reason === 'forbidden'
+        ? tr('stats.balance.localOnly')
+        : tr('stats.balance.retry')
+    return button(label, 'warn', [payload.message, tr('stats.balance.clickToQuery'), hint]
+      .filter(part => part !== undefined && part !== '')
+      .join('\n'))
   }
 
   const infos = payload.infos ?? []
@@ -92,17 +107,11 @@ export function BalanceChip(props: {
     .join(' · ')
   const when = payload.at === undefined ? '' : tr('stats.balance.at', { time: clockOf(payload.at) })
   const unavailable = payload.available === false
-  return (
-    <span
-      className={CLASS.balance}
-      title={[unavailable ? tr('stats.balance.unavailable') : undefined, detail, when, tr('stats.balance.hint')]
-        .filter(part => part !== undefined && part !== '')
-        .join('\n')}
-    >
-      <WalletIcon />
-      <span className={CLASS.balanceValue}>
-        {tr('stats.balance.label', { amount: infos.map(amountOf).join(' · ') })}
-      </span>
-    </span>
+  return button(
+    tr('stats.balance.label', { amount: infos.map(amountOf).join(' · ') }),
+    'value',
+    [unavailable ? tr('stats.balance.unavailable') : undefined, detail, when, tr('stats.balance.clickToQuery'), hint]
+      .filter(part => part !== undefined && part !== '')
+      .join('\n'),
   )
 }

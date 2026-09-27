@@ -343,11 +343,16 @@ check('the fallback never borrows another session\'s reply', otherSession === nu
 
 // 8. The balance number itself, now that the store has settled: a reopen starts
 // from the store's snapshot, so the page shows money instead of a spinner.
-const reopened = collectText(renderTree(statsEntry.component({ t: undefined }))).join(' ')
+const reopenedTree = renderTree(statsEntry.component({ t: undefined }))
+const reopened = collectText(reopenedTree).join(' ')
 check(`stats page shows the queried balance on reopen (got "${reopened.slice(0, 80)}")`,
   reopened.includes('余额 $5.24'))
 check('the balance readout never carries a credential-shaped string',
   !/sk-[A-Za-z0-9_-]{8,}/.test(reopened))
+// A failed read — or a page opened before the key was configured — must be one
+// click from another attempt, which is why the readout is a button.
+check('the balance readout is clickable, so a failed query can be retried',
+  collectProp(reopenedTree, 'onClick').some(handler => typeof handler === 'function'))
 
 if (failures.length > 0) {
   console.error(`smoke: ${failures.length} check(s) failed`)
