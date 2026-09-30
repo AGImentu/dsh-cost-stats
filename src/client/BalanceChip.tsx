@@ -63,13 +63,28 @@ export function BalanceChip(props: {
   loading: boolean
   onQuery: () => void
   tr: Translator
+  /**
+   * Which key the numbers belong to, as a NAME (`DEEPSEEK_API_KEY`) or a label
+   * for a pasted key. Never a value: it is shown in the tooltip so a reader who
+   * switched keys can see whose money this is.
+   */
+  source?: string
+  /** `true` when there is nothing to query yet (manual mode, empty input). */
+  disabled?: boolean
 }): ReactNode {
-  const { payload, loading, onQuery, tr } = props
+  const { payload, loading, onQuery, tr, source, disabled = false } = props
   const hint = tr('stats.balance.hint')
+  const provenance = source === undefined || source === '' ? [] : [tr('stats.balance.source', { source })]
 
   /** One button in every state, so the affordance never moves under the pointer. */
   const button = (label: string, tone: 'value' | 'warn', title: string): ReactNode => (
-    <button type="button" className={CLASS.balance} title={title} onClick={onQuery} disabled={loading}>
+    <button
+      type="button"
+      className={CLASS.balance}
+      title={title}
+      onClick={onQuery}
+      disabled={loading || disabled}
+    >
       <WalletIcon />
       <span
         className={tone === 'value' ? CLASS.balanceValue : undefined}
@@ -91,8 +106,10 @@ export function BalanceChip(props: {
       ? tr('stats.balance.noKey')
       : payload.reason === 'forbidden'
         ? tr('stats.balance.localOnly')
-        : tr('stats.balance.retry')
-    return button(label, 'warn', [payload.message, tr('stats.balance.clickToQuery'), hint]
+        : payload.reason === 'bad-request'
+          ? tr('stats.balance.badKey')
+          : tr('stats.balance.retry')
+    return button(label, 'warn', [...provenance, payload.message, tr('stats.balance.clickToQuery'), hint]
       .filter(part => part !== undefined && part !== '')
       .join('\n'))
   }
@@ -107,10 +124,18 @@ export function BalanceChip(props: {
     .join(' · ')
   const when = payload.at === undefined ? '' : tr('stats.balance.at', { time: clockOf(payload.at) })
   const unavailable = payload.available === false
+  const saved = payload.remembered === undefined
+    ? undefined
+    : payload.remembered === 'saved'
+      ? tr('stats.balance.saved')
+      : payload.remembered === 'unsupported'
+        ? tr('stats.balance.saveUnsupported')
+        : tr('stats.balance.saveFailed')
   return button(
     tr('stats.balance.label', { amount: infos.map(amountOf).join(' · ') }),
     'value',
-    [unavailable ? tr('stats.balance.unavailable') : undefined, detail, when, tr('stats.balance.clickToQuery'), hint]
+    [...provenance, unavailable ? tr('stats.balance.unavailable') : undefined, detail, when, saved,
+      tr('stats.balance.clickToQuery'), hint]
       .filter(part => part !== undefined && part !== '')
       .join('\n'),
   )

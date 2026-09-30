@@ -43,6 +43,12 @@ export const CLASS = {
   balanceValue: 'dsh-cost-stats__balanceValue',
   statsTitle: 'dsh-cost-stats__statsTitle',
   statsSubtitle: 'dsh-cost-stats__statsSubtitle',
+  keyRow: 'dsh-cost-stats__keyRow',
+  keyLabel: 'dsh-cost-stats__keyLabel',
+  keySelect: 'dsh-cost-stats__keySelect',
+  keyInput: 'dsh-cost-stats__keyInput',
+  keyRemember: 'dsh-cost-stats__keyRemember',
+  keyQuery: 'dsh-cost-stats__keyQuery',
   toolbar: 'dsh-cost-stats__toolbar',
   field: 'dsh-cost-stats__field',
   pickerPanel: 'dsh-cost-stats__picker',
@@ -316,9 +322,82 @@ export const STYLES = `
   line-height: 18px;
 }
 
-/* Query toolbar: the two calendar fields plus text actions. */
-.${CLASS.toolbar} {
+/* Key row: which credential the money belongs to, and the button that asks. */
+.${CLASS.keyRow} {
   display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.${CLASS.keyLabel} {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+
+.${CLASS.keySelect},
+.${CLASS.keyInput} {
+  height: 28px;
+  max-width: 260px;
+  padding: 0 8px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.${CLASS.keySelect}:hover,
+.${CLASS.keyInput}:hover {
+  border-color: var(--dsw-alias-border-l3);
+}
+
+.${CLASS.keyInput} {
+  min-width: 190px;
+  font-variant-numeric: tabular-nums;
+}
+
+.${CLASS.keyInput}::placeholder {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.${CLASS.keyRemember} {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+.${CLASS.keyQuery} {
+  height: 28px;
+  padding: 0 12px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+.${CLASS.keyQuery}:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.${CLASS.keyQuery}:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Query toolbar: the two calendar fields plus text actions. */
+.${CLASS.toolbar} {  display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;

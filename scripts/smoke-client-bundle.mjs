@@ -21,8 +21,9 @@
  * Behavior
  *  5. the chip prices a real turn from a mirrored snapshot and renders nothing
  *     without route attribution;
- *  6. the stats page renders its query switch, opens on today's replies, and
- *     fetches the plugin host route;
+ *  6. the stats page renders its query switch, opens on today's replies, fetches
+ *     the plugin host route, and lists the key catalog so the reader can pick
+ *     which key the balance query is about (by NAME — never a value);
  *  7. when the core store WITHHOLDS a turn's usage, the chip prices that reply
  *     from the host fold instead and labels the number as recomputed.
  *
@@ -150,11 +151,24 @@ const balancePayload = {
   available: true,
   infos: [{ currency: 'USD', total: 5.24, granted: 0, toppedUp: 5.24 }],
   at: foldRow.at,
+  ref: 'DEEPSEEK_API_KEY',
+}
+
+/** The key catalog's canned answer: names and flags, never values. */
+const keysPayload = {
+  ok: true,
+  default: 'DEEPSEEK_API_KEY',
+  refs: [
+    { ref: 'DEEPSEEK_API_KEY', configured: true, origin: 'default' },
+    { ref: 'MIXTOKEN_API_KEY', configured: true, origin: 'store', provider: 'mixtoken' },
+  ],
+  canRemember: true,
 }
 
 const loaded = []
 const styleTags = []
 const fetched = []
+const requests = []
 const sandbox = {
   console,
   Intl,
@@ -167,14 +181,19 @@ const sandbox = {
   Array,
   JSON,
   String,
-  fetch: (url) => {
+  fetch: (url, init) => {
     const target = String(url)
     fetched.push(target)
+    requests.push({ url: target, method: init?.method, body: init?.body })
     return Promise.resolve({
       ok: true,
       status: 200,
       statusText: 'OK',
-      json: async () => (target.includes('/cost-stats/balance') ? balancePayload : usagePayload),
+      json: async () => {
+        if (target.includes('/cost-stats/keys')) return keysPayload
+        if (target.includes('/cost-stats/balance')) return balancePayload
+        return usagePayload
+      },
     })
   },
   document: {
@@ -309,11 +328,12 @@ check(`stats page opens on today's replies (field shows ${todayKey}, got "${stat
 check(`stats page fetches the plugin host route (got ${JSON.stringify(fetched)})`,
   fetched.includes('/cost-stats/usage'))
 
-// 6b. Balance readout: opening the page asks the host (no button to press). The
-// rendered number is asserted below, after the module store has settled, because
-// this miniature renderer has no re-render pass.
-check(`stats page asks the host for the balance on mount (got ${JSON.stringify(fetched)})`,
-  fetched.includes('/cost-stats/balance'))
+// 6b. The key row: opening the page asks which keys exist (names only). The
+// rendered dropdown and the balance request that carries the picked NAME are
+// asserted below, after the module stores have settled, because this miniature
+// renderer has no re-render pass.
+check(`stats page asks the host for the key catalog on mount (got ${JSON.stringify(fetched)})`,
+  fetched.includes('/cost-stats/keys'))
 
 // 7. Fallback path: core withheld the turn's usage, the host fold still prices it.
 const withheldNode = {
@@ -341,8 +361,15 @@ check('the fallback chip is labelled as recomputed, not as the official total',
 const otherSession = renderTree(chipEntry.component({ ...withheldProps, sessionId: 's9' }))
 check('the fallback never borrows another session\'s reply', otherSession === null)
 
-// 8. The balance number itself, now that the store has settled: a reopen starts
-// from the store's snapshot, so the page shows money instead of a spinner.
+// 8. The balance number itself, now that the stores have settled: a reopen
+// starts from the store's snapshot, so the page shows money instead of a
+// spinner.
+//
+// The catalog decides which name to ask about, so the balance request only
+// happens on a render that already sees the catalog — this "priming" render is
+// that one, and the assertion renders after its answer arrived.
+renderTree(statsEntry.component({ t: undefined }))
+await new Promise((resolve) => { setTimeout(resolve, 20) })
 const reopenedTree = renderTree(statsEntry.component({ t: undefined }))
 const reopened = collectText(reopenedTree).join(' ')
 check(`stats page shows the queried balance on reopen (got "${reopened.slice(0, 80)}")`,
@@ -353,6 +380,23 @@ check('the balance readout never carries a credential-shaped string',
 // click from another attempt, which is why the readout is a button.
 check('the balance readout is clickable, so a failed query can be retried',
   collectProp(reopenedTree, 'onClick').some(handler => typeof handler === 'function'))
+
+// 8b. The key row: the dropdown lists the catalog's NAMES (plus the manual
+// entry), the button says what it does, and the balance query names the key it
+// was asked about instead of silently using "whatever is configured".
+check(`stats page lists the configured key names (got "${reopened.slice(0, 140)}")`,
+  reopened.includes('DEEPSEEK_API_KEY') && reopened.includes('MIXTOKEN_API_KEY'))
+check('the key dropdown keeps a manual entry reachable', reopened.includes('手动输入 key'))
+check('the key row carries the query button', reopened.includes('查询KEY余额'))
+check(`the balance query names the picked credential (got ${JSON.stringify(fetched)})`,
+  fetched.includes('/cost-stats/balance?ref=DEEPSEEK_API_KEY'))
+check('the balance query is a GET with no body, and no key ever reaches a URL',
+  requests.filter(entry => entry.url.includes('/cost-stats/balance'))
+    .every(entry => entry.method === undefined && entry.body === undefined))
+check('the chip says which key the money belongs to',
+  collectProp(reopenedTree, 'title').some(title => String(title).includes('来源:DEEPSEEK_API_KEY')))
+check('the page never renders a credential-shaped string',
+  !/sk-[A-Za-z0-9_-]{8,}/.test(reopened) && !/sk-[A-Za-z0-9_-]{8,}/.test(JSON.stringify(requests)))
 
 if (failures.length > 0) {
   console.error(`smoke: ${failures.length} check(s) failed`)

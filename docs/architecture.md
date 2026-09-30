@@ -2,7 +2,8 @@
 
 本文记录这个插件**依赖 DSH 的哪些契约**、为什么这样设计,以及 DSH 升级时应该检查什么。
 所有锚点都对 DSH `0.1.5-rc.2` 与 `0.1.7-rc.2` 两版核对过(路径为 DSH 仓库内路径);
-0.1.7 的复核结论见 §5 第 10 条(会话格式 v4)。
+0.1.7 的复核结论见 §5 第 10 条(会话格式 v4),0.2.0-rc.2 的复核结论见 §5 第 11、12 条
+(凭据服务仍提供 `resolve`/`describe`/`set`,三个路由与清单解析在真机实测通过)。
 
 ## 1. 两个产物,两条契约
 
@@ -109,22 +110,38 @@
 
 ```
 页面每次挂载(打开设置 → 费用统计)
-   └─> client/balance-store.ts:load()  ← 15 秒内复用,并发合并
-         └─> GET /cost-stats/balance
+   ├─> client/key-store.ts:load() ──> GET /cost-stats/keys          ← 一次/页面,只回名字
+   │       └─> host/key-catalog.ts
+   │             ├─ 凭据文件($DSH_HOME/.credentials.yaml)的 refs: 段 → **只读名字**(行解析)
+   │             ├─ 各 profile 配置里的 apiKeyEnv: 名 → 供应商 id      ← 配置文件里只有名字
+   │             └─ ctx.credentials.describe(ref) → 已配置 / 未配置(**永不返回值**)
+   └─> client/balance-store.ts:load({ref}) ──> GET /cost-stats/balance?ref=<名字>
+         └─> client/balance-store.ts:load({key}) ──> POST /cost-stats/balance   ← 手动粘贴时
                └─> host/balance-route.ts
                      ├─ isLocalRequest():peer 地址或 Host 非本机 → 403,且不碰凭据
-                     ├─ ctx.credentials.resolve('DEEPSEEK_API_KEY')  ← **现取现用,不落盘、不缓存、不记录**
+                     ├─ 名字:ctx.credentials.resolve(<名字>)  ← **现取现用,不落盘、不缓存、不记录**
+                     ├─ 手动:请求体里的 key(不进 URL),可选 credentials.set(名字, key) 写入 DSH 凭据库
                      ├─ GET https://api.deepseek.com/user/balance(8 秒超时)
-                     └─ host/balance.ts:parseBalance() → **只回数字**
-                           └─> client/BalanceChip.tsx:余额 $5.24 / 查询中 / 未配置 / 失败
+                     └─ host/balance.ts:parseBalance() → **只回数字 + 名字**
+                           └─> client/BalanceChip.tsx:余额 ¥5.50 / 查询中 / 未配置 / 失败(悬停带「来源:xxx」)
 ```
 
+- **下拉里的名字从哪来**:`key-catalog.ts` 只做"发现"——凭据文件的 `refs:` 段(值从不读取,
+  只取每行冒号前的名字)+ 各 profile 配置文件里声明的 `apiKeyEnv`(配置里出现的是引用名,不是密钥),
+  再用 `describe` 问出配置状态。两个解析函数都是纯函数,单测按**真实文件形态**覆盖(含引号名、注释、
+  没有 `refs:` 段的旧形态、被两个供应商共用的名字、以及"值不像名字"的行)。
+- **为什么缓存按 key 名分开**:同一个账号的两把 key 查出同一个数(接口是账号级的),但换 key 这件事本身
+  必须立刻改口径 —— 所以页面与宿主两层缓存都以**凭据名**为键,手动粘贴的 key **完全不缓存**,点一次查一次。
 - **为什么 key 不落插件**:插件是公开仓库,任何"把 key 存进插件配置"的设计都会随仓库泄露。
-  这里 key 的唯一来源是 DSH 自己的凭据服务(与模型配置同一份),宿主半边每次查询现场取用,
-  用完立刻随作用域释放;`lib/` 产物、插件配置文件、路由响应、日志里都没有它。
-- **为什么只对本机开放**:这是唯一触碰凭据的路由。判定是"一侧保守":能确证非本机(peer 地址或
+  名字类查询的 key 唯一来源是 DSH 自己的凭据服务(与模型配置同一份),宿主半边每次查询现场取用,
+  用完立刻随作用域释放;手动粘贴的 key 只活在页面内存里,经同源 POST 交给本机宿主。
+  唯一可能的落盘是读者**明确勾选**「存入 DSH 凭据库」——那写的是 **DSH 的**凭据文件,不是插件的地盘;
+  `lib/` 产物、插件配置文件、路由响应、日志里都没有它。
+- **为什么只对本机开放**:这两个路由是唯一触碰凭据的路径。判定是"一侧保守":能确证非本机(peer 地址或
   `Host` 头)就 403,而拿不到这两个信息的未知形态仍放行 —— 否则会在 DSH 的小版本升级中把功能弄坏,
   而 DSH 默认只监听回环地址这件事本身已经挡住了远程调用。
+- **为什么手动 key 走请求体而不是查询串**:URL 会进浏览器历史、缓存键、Referer 与访问日志。
+  请求体有 16 KB 上限,超限或非 JSON 都回一个可读的 `bad-request`。
 - **为什么有 15 秒缓存**:打开设置页是人的动作,人可以在十秒里开五次。DeepSeek 的余额接口有速率限制,
   插件把它吸收掉而不是转发出去;"亲自点刷新"则用 `?refresh=1` 同时绕过页面与宿主两层缓存。
 - **失败也要可读**:未配置 key、凭据服务不可用、401/403、网络失败、无法解析,各自有原因码与中文说明;
@@ -208,6 +225,14 @@
     DeepSeek 用的名字就是 **`DEEPSEEK_API_KEY`**;默认实现 `credentials-local` 存于本机私有 YAML,
     **环境变量优先**。同一族还有 `describe(ref)`(只回答"配了没",永不返回值)与 `set/unset`。
 
+     **0.9.0 起用到同族的另外两个成员**,并在 DSH `0.2.0-rc.2` 上实测过:`describe` 存在并返回配置状态
+     (`GET /cost-stats/keys` 因此能列出名字而不取值),`set` 存在并可写(`POST /cost-stats/balance`
+     带 `remember` 时返回 `remembered: "saved"`,写入后清单立刻出现该名字)。两者都是**可选能力**——
+     缺失时分别退化为"按文本证据判断"与 `remembered: "unsupported"`,不会让余额查询本身失败。
+     `describe` 的返回形态做成了宽容解析(`boolean` / `{configured}` / `{set}` 三种都认,认不出即 `unknown`)。
+     另外:接受的名字必须匹配 `^[A-Za-z_][A-Za-z0-9_]{0,63}$`,粘贴的值必须无空白且长度在 8–512 之间——
+     校验在**碰凭据服务与网络之前**完成,所以一个带换行的粘贴不会变成一次失败的请求。
+
     ⚠️ **取法有坑(0.8.1 踩过)**:cordis 的 context 是 Proxy,它的 `get` 陷阱对**未被本插件 `inject` 声明的服务**
     会抛 `cannot get property "<name>" without inject`(`vendor/cordis/src/reflect.ts:144`)。
     DSH 里 `credentials` 由兄弟插件 `credentials-local` 提供,所以 `ctx.credentials` 这种自然写法**必然抛错**。
@@ -235,6 +260,18 @@
     (`packages/client/ui-chat/src/client/contract/chat-nodes.ts`),官方胶囊在 0.1.7 起受
     「性能与用量 = 详细」模式控制,而本插件渲染在 `extraActions`,不受该模式影响。
 
+12. **凭据清单与三个路由(0.9.0 新增)**:
+    - `credentials-local` 的存储格式:`$DSH_HOME/.credentials.yaml` 是 `version` / `records`
+      (不透明,内含浏览器会话密钥、账号 token)+ `refs:`(纯 API key 的 **名字 → 值**)。清单只解析
+      `refs:` 段的**名字**,用"缩进回到同级即结束"界定该段;没有 `refs:` 段的旧形态退化为顶层平面映射,
+      并显式排除 `version`/`records`/`kind`/`payload`/`id`/`secret`/`token`/`issuer` 这些结构键。
+    - 供应商声明:各 profile 的 `cordis.patch.yml` 里 `providers.<id>.apiKeyEnv: <名字>`;
+      供应商 id 由"向上找最近的、缩进更浅的裸键行"得到(不是 `displayName`,它常被写成 URL)。
+    - 路由三个:`GET /cost-stats/usage`、`GET /cost-stats/keys`、`GET|POST /cost-stats/balance`
+      (`packages/host/webserver` 的 `register({kind,path,handler})`);POST 请求体用 Node
+      `IncomingMessage` 的异步迭代读取,上限 16 KB。
+    - 失效时的表现:清单为空 → 下拉只剩「手动输入 key…」(功能不消失);`describe`/`set` 缺失 → 见第 11 条。
+
 ## 6. 测试策略
 
 | 层 | 工具 | 覆盖 |
@@ -243,8 +280,10 @@
 | 日志折叠 | `vitest`(`tests/turn-fold.spec.ts`) | 头部/标题、回合窗口、多尝试累加、`message.source` 优先与 `model/selection` 回退、非法用量整条丢弃、无人认领的 usage、`assistant/attempt` 重试、未知事件容错、**压缩折叠(独立计费项 / 自带路由 / 非法用量丢弃 / 无路由不猜)**、**分叉继承段(按接缝跳过 / 只按 handle 切点跳过 / 无接缝整份不计 / 非 seeded 不受影响)**、**会话格式 v4(顶层 v4 头 / 忽略工具角色与系统消息 / 与 v3 数字一致 / v4 的分叉接缝)** |
 | 统计模型 | `vitest`(`tests/stats-model.spec.ts`) | 日/月键、合计(回复/压缩分开计数、会话数、子代理、未计价、金额、用量)、空选择返回 0、分页(切页/越界夹取/非正数与 NaN/空选择/每页 0 条) |
 | 兜底缓存 | `vitest`(`tests/usage-store.spec.ts`) | 并发三次只发一次请求、TTL 内复用 / 过期重取、`?refresh=1`、失败保留旧数据并记录错误、非 2xx 视为错误、按 `会话+回合` 查找(不串会话、**不取压缩行**)、订阅与退订 |
-| 产物契约 | `node scripts/smoke-client-bundle.mjs` | bundle 注册 id = 包名、工厂返回 `inject`/`apply`、两个插槽各注册一项、导航 label 非空、**两个条目的渲染抛错都被隔离成 null**、胶囊对真实分档算出 `≈¥5`、无路由不渲染、统计页发起宿主请求、**官方用量缺失时首屏不渲染 → 兜底拿到数据后渲染 `≈¥5` → 标题标注为「按日志重算」→ 不借用其他会话的行**、**统计页挂载即请求余额路由 → 重开页面时余额数字已就位 → 余额文本里不出现任何 `sk-…` 形状的字符串** |
-| 余额与凭据 | `vitest`(`tests/balance.spec.ts`、`tests/api-key.spec.ts`) | 金额字符串解析与非法条目丢弃、`is_available: false` 传递、币种齐全、仅本机守卫(回环各种写法 / 外部 peer / 外部 Host / 未知形态)、凭据缺失与抛错的降级、**key 只出现在 Authorization 头且失败信息里不含 key**、缓存与 `?refresh=1`、刷新失败时保留上次好数据、非本机请求 403 且不调用凭据服务 |
+| 产物契约 | `node scripts/smoke-client-bundle.mjs` | bundle 注册 id = 包名、工厂返回 `inject`/`apply`、两个插槽各注册一项、导航 label 非空、**两个条目的渲染抛错都被隔离成 null**、胶囊对真实分档算出 `≈¥5`、无路由不渲染、统计页发起宿主请求、**官方用量缺失时首屏不渲染 → 兜底拿到数据后渲染 `≈¥5` → 标题标注为「按日志重算」→ 不借用其他会话的行**、**统计页挂载即请求余额路由 → 重开页面时余额数字已就位 → 余额文本里不出现任何 `sk-…` 形状的字符串**、**挂载即请求 key 清单 → 重开页面时下拉渲染出配置过的名字 → 按钮为「查询KEY余额」→ 余额请求带 `ref=<名字>` 且是 GET 无请求体 → 胶囊标题写明「来源:xxx」→ 页面与请求里都没有 `sk-…`** |
+| 余额与凭据 | `vitest`(`tests/balance.spec.ts`、`tests/api-key.spec.ts`) | 金额字符串解析与非法条目丢弃、`is_available: false` 传递、币种齐全、仅本机守卫(回环各种写法 / 外部 peer / 外部 Host / 未知形态)、凭据缺失与抛错的降级、**key 只出现在 Authorization 头且失败信息里不含 key**、缓存与 `?refresh=1`、刷新失败时保留上次好数据、非本机请求 403 且不调用凭据服务、**按名字取值 / 按名字隔离缓存(换 key 不串数字)/ 非法名字与非法值的提前拒绝 / POST 请求体解析(含坏 JSON)/ 手动 key 不缓存与不回显 / `describe` 三种形态与缺成员·抛错 / `set` 的 saved·unsupported·failed** |
+| key 清单 | `vitest`(`tests/key-catalog.spec.ts`) | 只读 `refs:` 段的名字 / 段结束即停 / 引号与注释 / 无 `refs:` 段的平面形态 / `apiKeyEnv` 与供应商识别 / 被共用的名字去重 / 非名字的值被忽略 / 合并规则(默认第一、来源优先、供应商补全、无 `describe` 时按文本证据、非法名字丢弃)/ 载荷里没有 `sk-` |
+| key 选择与缓存 | `vitest`(`tests/key-store.spec.ts`) | 建议名跳过已占用 / 只记**名字**(存储里不出现 `sk-` 形状)/ 存储不可用时抛错仍安全 / 按名字查询且 URL 只带名字 / 同名字合并并发、不同名字各自缓存 / 手动 key 走请求体且两次点击发两次请求 / `refresh=1` / 网络失败降级为载荷 |
 | 独立复算 | `node scripts/verify-balance.mjs` | 绕过宿主直读日志复算全部会话累计,并与 API 余额的差值对账(2026-09-11 实测 Δ$0.249 vs 余额 Δ$0.25) |
 | **双入口一致性** | `node scripts/verify-fold-paths.mjs` | 对每份真实日志(**所有代际**:v3 与 0.1.7 起的 v4 并存)用两种输入各折一遍(有头部→自行找接缝;无头部+`inheritedEventCount`→路由形态)并逐条比对。0.7.1 曾只在第一种形态下正确,页面仍重复计费;这道门就是为那类「离线通过、真机不一致」而加的 |
 | **格式升级对账** | `node scripts/verify-fold-paths.mjs` + 一次性探针 | 0.7.3 适配 0.1.7 时,对同一会话的 v3/v4 两份真实日志逐回合比对:共同回合**全部一致**,v4 只是多了升级后的新回合 —— 这才是「格式升级没有改变历史数字」的证据,而不是口头保证 |

@@ -1,10 +1,15 @@
 /**
  * The wire shape of the balance readout, shared by both halves.
  *
- * The browser half only ever sees numbers and a reason code — never the API key,
- * which is resolved and used entirely inside the host half. That split is the
- * whole point of this module: the route's payload is the contract that keeps the
- * secret out of the page (and therefore out of any screenshot or error report).
+ * The browser half only ever sees numbers, key NAMES and a reason code — never
+ * an API key value. Keys resolved from DSH's credential service never leave the
+ * host half at all, and a key typed into the page is used for exactly one
+ * request (unless the reader asks to store it in DSH's own credential store,
+ * which is the host's business and never echoed back).
+ *
+ * That split is the whole point of this module: the route's payload is the
+ * contract that keeps secrets out of the page (and therefore out of any
+ * screenshot, error report or browser history).
  *
  * @module dsh-cost-stats/balance
  */
@@ -29,6 +34,8 @@ export type BalanceFailure =
   | 'credentials-unavailable'
   /** The caller is not on this machine; the key is only used for local readers. */
   | 'forbidden'
+  /** The request carried a reference or a key this plugin refuses to use. */
+  | 'bad-request'
   /** The request to DeepSeek did not complete. */
   | 'network'
   /** DeepSeek answered 401/403: the configured key is rejected. */
@@ -36,7 +43,7 @@ export type BalanceFailure =
   /** DeepSeek answered something this plugin cannot read. */
   | 'bad-response'
 
-/** The `GET /cost-stats/balance` payload. */
+/** The `GET|POST /cost-stats/balance` payload. */
 export interface BalancePayload {
   readonly ok: boolean
   /** DeepSeek's `is_available`: whether the balance can still pay for calls. */
@@ -44,8 +51,61 @@ export interface BalancePayload {
   readonly infos?: readonly BalanceInfo[]
   /** Epoch ms of the successful query. */
   readonly at?: number
+  /**
+   * The credential NAME the numbers belong to (`DEEPSEEK_API_KEY`).
+   *
+   * A name is not a secret — it is the identifier the reader picked in the
+   * page's dropdown — and it is what lets the chip say whose money this is.
+   * Absent for a key that was typed into the page: that one has no name.
+   */
+  readonly ref?: string
+  /** `true` when the numbers came from a key typed into the page. */
+  readonly manual?: boolean
+  /** Outcome of a `remember` request, when the caller asked to store the key. */
+  readonly remembered?: RememberOutcome
   /** Present only when `ok` is false. */
   readonly reason?: BalanceFailure
   /** Short human-readable detail; never contains the key. */
+  readonly message?: string
+}
+
+/** What happened to a "store this key in DSH's credential store" request. */
+export type RememberOutcome =
+  /** Written; the reference is now resolvable like any configured key. */
+  | 'saved'
+  /** This DSH build's credential service cannot write from a plugin. */
+  | 'unsupported'
+  /** The service refused or threw. */
+  | 'failed'
+
+/** Where a candidate key reference was discovered. */
+export type KeyRefOrigin =
+  /** The harness default: DSH's own model configuration uses this name. */
+  | 'default'
+  /** Present in DSH's local credential store. */
+  | 'store'
+  /** Named by a provider's `apiKeyEnv` in the profile configuration. */
+  | 'config'
+
+/** One selectable API key, described WITHOUT its value. */
+export interface KeyRefInfo {
+  /** The credential reference (a POSIX-style environment variable name). */
+  readonly ref: string
+  /** Whether the reference currently resolves to something. */
+  readonly configured: boolean
+  readonly origin: KeyRefOrigin
+  /** Provider id from the profile configuration, when one was found. */
+  readonly provider?: string
+}
+
+/** The `GET /cost-stats/keys` payload: what can be picked, never what it is. */
+export interface KeysPayload {
+  readonly ok: boolean
+  /** The reference used when the reader picks nothing. */
+  readonly default: string
+  readonly refs: readonly KeyRefInfo[]
+  /** Whether this DSH build's credential service can be written from here. */
+  readonly canRemember: boolean
+  /** Present only when the catalog could not be built (the default still is). */
   readonly message?: string
 }

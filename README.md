@@ -3,7 +3,7 @@
 <p>
   <a href="https://github.com/AGImentu/dsh-cost-stats/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/AGImentu/dsh-cost-stats/actions/workflows/ci.yml/badge.svg" /></a>
   <a href="https://github.com/AGImentu/dsh-cost-stats/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/AGImentu/dsh-cost-stats" /></a>
-  <img alt="DSH 0.1.5-rc.2 → 0.1.7-rc.2" src="https://img.shields.io/badge/DSH-0.1.5--rc.2%20%E2%86%92%200.1.7--rc.2-4d6bfe" />
+  <img alt="DSH 0.1.5-rc.2 → 0.2.0-rc.2" src="https://img.shields.io/badge/DSH-0.1.5--rc.2%20%E2%86%92%200.2.0--rc.2-4d6bfe" />
   <a href="https://opensource.org/licenses/MIT"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg" /></a>
   <img alt="无内核改动" src="https://img.shields.io/badge/%E6%97%A0%E5%86%85%E6%A0%B8%E6%94%B9%E5%8A%A8-%E5%8F%AA%E7%94%A8%E5%85%AC%E5%BC%80%E6%8F%92%E6%A7%BD-4d6bfe" />
   <img alt="中英双语" src="https://img.shields.io/badge/%E7%95%8C%E9%9D%A2-zh%20%2F%20en-4d6bfe" />
@@ -59,10 +59,11 @@
 | **设置页「费用统计」** | 设置 → **费用统计**(在「侧边卡片」之后):**默认打开就是今天**的回复;点**日期**日历或**月份**日历可换范围(互斥,另有「清除筛选」与「刷新」)。逐条列出每一次计费项——**回复**与**上下文压缩**(带「压缩」标签)——的**时间/会话/用量/费用**(四列统一左对齐,¥ 与 $ 同行显示),**每页 15 条**并带上一页/下一页;顶部**费用合计跟随查询**(¥ 与 $ 同行,右侧回复/会话/用量居中显示)。数据由插件自己的宿主路由折遍所有会话日志得到 |
 | **绝不编数字** | 拿不到路由归属(不知道用哪个模型计费)或模型无官方公示价时,**胶囊不显示**、统计页标 `无价目` 且不计入合计,而不是显示 0 或猜测值 |
 | **官方数据缺失时自动兜底** | DSH 核心的回合用量是「全有或全无」:一次重试请求没回报用量,官方「用量」胶囊就会整块消失(插件读的是同一个字段)。此时胶囊改用**插件自己的宿主侧日志重算**补上,并在标题与浮层里标注「按日志重算」,不与官方口径混淆;官方数据正常时永远优先用官方值 |
-| **余额显示(0.8.0)** | 统计页标题右侧显示**当前 DeepSeek 账号余额**(如 `余额 $5.24`,悬停看总额/充值/赠金构成与查询时间)。**每打开一次页面就查一次**,数据来自 DeepSeek 官方 `GET /user/balance`。查不到时显示可读状态(`未配置 API key` / `余额查询失败`),不会假装是 0 |
-| **API key 只在本机宿主侧用一下** | 插件**不保存** key、**不接收**页面传来的 key、也不写进任何文件:每次查询由宿主半边通过 DSH 自己的凭据服务 `ctx.credentials.resolve('DEEPSEEK_API_KEY')` 现取现用(就是你模型配置里那把),用完即弃。key 只出现在发往 `api.deepseek.com` 的请求头里,**不进页面、不进日志、不进仓库**。余额路由**仅对本机请求开放**(非本机 peer 或外部 `Host` 直接 403) |
+| **余额显示(0.8.0)** | 统计页标题右侧显示**当前账号余额**(如 `余额 ¥5.50`,悬停看**来源 key**、总额/充值/赠金构成与查询时间)。**每打开一次页面就查一次**,数据来自 DeepSeek 官方 `GET /user/balance`。查不到时显示可读状态(`未配置 API key` / `余额查询失败` / `这个 key 不合法`),不会假装是 0 |
+| **选哪把 key 查余额(0.9.0)** | 标题下方新增一行 `KEY`:下拉里列出**这份 DSH 里配置过的凭据名**(`DEEPSEEK_API_KEY`、中转站的 key……每项还标出它来自哪个供应商;只有名字,**页面拿不到值**),最后一项是「手动输入 key…」。选好之后点右边的 **「查询KEY余额」**,插件就用那把 key 去查 DeepSeek 官方余额,余额胶囊会写明「来源:xxx」。选名字时 key 由宿主现取现用;**手动粘贴的 key 走 POST 请求体(不进 URL、不进浏览器历史)**,默认只在本次页面有效,只有勾选「存入 DSH 凭据库」才会写进 **DSH 自己的**凭据文件(所以下次能在下拉里选到) |
+| **key 只在本机宿主侧用一下** | 插件**不保存** key、**不写进插件的任何文件**、**不进仓库**;唯一可能的落盘是你在手动输入时**明确勾选**「存入 DSH 凭据库」——那是写进 **DSH 自己的**凭据库(和你在「设置 → 模型」里配的 key 放在一起),不是插件的地盘。选名字时由宿主经 `ctx.credentials.resolve(<名字>)` 现取现用;手动输入的 key 只活在当前页面的内存里,通过同源 POST 交给本机宿主,用完即弃。key 只出现在发往 `api.deepseek.com` 的请求头里,**不进页面渲染结果、不进日志、不进 URL**。两个凭据路由都**仅对本机请求开放**(非本机 peer 或外部 `Host` 直接 403) |
 | **不碰官方控件** | 两个条目都包在**错误边界**里:本插件渲染出错只会让自己那一块消失,绝不牵连同一行的复制/反馈/分支/用量/用时控件,也不影响设置面板内容列(冒烟脚本里有专门的"抛错必须被隔离"断言) |
-| **唯一的外网请求是余额** | 除余额那次调用外,不读 API key、不写任何后端、不访问外部网络。其余请求都发往**本机 DSH 自己**的插件路由(`GET /cost-stats/usage`、`GET /cost-stats/balance`,同源),且只在「统计页打开」或「官方数据缺失需要兜底」时发生 |
+| **唯一的外网请求是余额** | 除余额那次调用外,不读 API key、不写任何后端、不访问外部网络。其余请求都发往**本机 DSH 自己**的插件路由(`GET /cost-stats/usage`、`GET /cost-stats/keys`、`GET\|POST /cost-stats/balance`,同源),且只在「统计页打开」「官方数据缺失需要兜底」或「你点了查询」时发生 |
 | **中英双语** | 字典跟随 DSH 界面语言(`locale` 命名空间 `cost-stats`) |
 | **无内核改动** | 只使用 DSH 公开的插件插槽 `conversation.chat.assistant-actions`、`settings.section` 与平台种子模块(`react` / `react-dom`) |
 
@@ -72,8 +73,8 @@
 
 **前置**:DSH 已能正常运行(`dsh web` 起得来);Node.js ≥ 20,pnpm ≥ 10。
 
-**支持的 DSH 版本**:在 **DSH `0.1.5-rc.2` → `0.1.7-rc.2`** 上真机验证(含 0.1.7 引入的
-**会话日志格式 v4**)。插件只用公开插槽
+**支持的 DSH 版本**:在 **DSH `0.1.5-rc.2` / `0.1.7-rc.2` / `0.2.0-rc.2`** 上真机验证(含 0.1.7 引入的
+**会话日志格式 v4**,以及 0.2.0 下 `ctx.credentials.describe` / `set` 的存在性实测)。插件只用公开插槽
 (`conversation.chat.assistant-actions`、`settings.section`)与平台种子模块(`react` / `react-dom`),
 不 import 任何 DSH 内部包,也不声明 peerDependencies(所以 0.1.7 起的 peer 校验不会禁用本插件),
 对 DSH 小版本不敏感。
@@ -289,7 +290,7 @@ node scripts/verify-balance.mjs 2026-09-11T11:07 2026-09-11T12:20
 ```sh
 pnpm install
 pnpm run typecheck   # tsc --noEmit
-pnpm test            # 95 项单测:计费/时段/别名规则 + 日志折叠(含压缩、分叉继承段、会话格式 v4) + 日历 + 统计与分页 + 兜底缓存 + 余额解析/凭据读取/本机守卫
+pnpm test            # 140 项单测:计费/时段/别名规则 + 日志折叠(含压缩、分叉继承段、会话格式 v4) + 日历 + 统计与分页 + 兜底缓存 + 余额解析/凭据读取与 describe、写入 + key 清单解析与合并 + 按 key 名的缓存隔离 + 本机守卫
 pnpm run build       # lib/index.js(host 半边:路由 + 日志折叠) + lib/client.js(浏览器半边)
 pnpm run smoke       # 产物契约冒烟:在 Node 里跑 client.js,验证注册 id / 插件形状 / 两个插槽 / 真实算价 / 抛错隔离 / 宿主请求
 pnpm run verify      # typecheck + test + build + smoke
@@ -310,22 +311,26 @@ pnpm run watch       # 开发时增量重建(配合 dsh 的 client HMR;host 改�
 src/
   pricing.ts              计费模型:价目表、别名与改路规则、高峰窗口、cost 计算、金额格式化(纯函数,单测覆盖)
   rows.ts                 宿主路由与统计页共享的 wire 类型(计费项行 / 载荷;`compaction: true` = 压缩行)
-  balance.ts              余额的 wire 类型(页面只看得到数字与失败原因码,永远看不到 key)
-  routes.ts               路由常量(两半边共用,避免字符串漂移)
-  index.ts                host 半边:注册 GET /cost-stats/usage 与 GET /cost-stats/balance,并作为一行 live Loader row
+  balance.ts              余额与 key 清单的 wire 类型(页面只看得到数字、**key 的名字**与失败原因码,永远看不到 key 值)
+  routes.ts               路由常量(两半边共用,避免字符串漂移):usage / keys / balance
+  index.ts                host 半边:注册三个路由,并作为一行 live Loader row
   host/
     turn-fold.ts          纯折叠:持久化事件 → 每次回复 + 每次压缩(窗口 / 模型 / 分档 token)
     cost-stats-index.ts 索引:枚举会话 → 读日志 → 折叠 → 逐条计价 → TTL 缓存
     balance.ts            余额解析(DeepSeek 的字符串金额 → 数字)+ 仅本机请求的守卫(纯函数,单测覆盖)
-    api-key.ts            **唯一接触 API key 的模块**:经 `ctx.credentials.resolve('DEEPSEEK_API_KEY')` 现取现用,不保存、不记录
-    balance-route.ts      余额路由:本机校验 → 取凭据 → 调用官方接口 → 只回数字(15 秒缓存,`?refresh=1` 强制)
-    contract.ts           host 侧契约镜像(sessionPersistence / webServer / 请求头与 peer 地址)
+    api-key.ts            **唯一接触 key 值的模块**:`resolve` 现取现用、`describe` 只问"配了没"、`set` 只在你勾选时写进 DSH 凭据库
+    key-catalog.ts        key 清单:读凭据库的 `refs` 名字 + 配置里的 `apiKeyEnv`(纯解析函数,单测覆盖),再用 `describe` 补「已配置 / 未配置」
+    balance-route.ts      余额路由:本机校验 → 按**名字**取凭据或用手动 key → 调用官方接口 → 只回数字与名字(15 秒缓存**按 key 名分开**,`?refresh=1` 强制)
+    keys-route.ts         key 清单路由(仅本机;只回名字,不解析任何值)
+    contract.ts           host 侧契约镜像(sessionPersistence / webServer / 请求头、peer 地址与请求体迭代)
   client/
     index.tsx             浏览器半边:注入样式、注册字典、注册两个插槽条目(胶囊 + 统计页)
     CostChip.tsx          费用胶囊 + 明细面板(portal + 定位 + Esc/外部点击关闭)
-    StatsSection.tsx      设置页「费用统计」:标题 + 余额胶囊、合计卡片、逐条计费项明细表(回复 / 压缩,单一列表 + 分页)
-    BalanceChip.tsx       标题右侧的余额胶囊(数字 / 查询中 / 未配置 / 失败四种状态 + 悬停明细)
-    balance-store.ts      余额的共享缓存(15 秒有效期、并发合并):页面每次打开都查,重复打开不刷爆接口
+    StatsSection.tsx      设置页「费用统计」:标题 + 余额胶囊 + KEY 行、合计卡片、逐条计费项明细表(回复 / 压缩,单一列表 + 分页)
+    BalanceChip.tsx       标题右侧的余额胶囊(数字 / 查询中 / 未配置 / 失败四种状态 + 悬停明细与来源 key)
+    KeyPicker.tsx         KEY 行:凭据下拉 + 「查询KEY余额」按钮 + 手动输入(密码框)与「存入 DSH 凭据库」
+    balance-store.ts      余额的共享缓存(**按 key 名分开**、15 秒有效期、并发合并;手动粘贴的 key 不缓存)
+    key-store.ts          key 清单的缓存 + 已选名字(只记**名字**,存 localStorage;手动 key 从不进这里)
     Pickers.tsx           两个日历选择器(选日期 / 选月份)+ 共享的锚定浮层
     calendar.ts           纯日历数学:周一为首的 6×7 网格、跨年月份平移、月份键解析
     stats-model.ts        统计模型(纯函数):日/月键 + 合计(回复/压缩分开计数)+ 分页切片
@@ -409,9 +414,12 @@ pnpm run build && pnpm publish --access public --registry https://registry.npmjs
 - 官方核心的回合用量是「全有或全无」:回合里只要有一次重试请求没回报用量,官方「用量」胶囊就会消失。
   本插件此时改用**宿主侧日志重算**补一个数(标题会写「按日志重算」),但日志里同样缺失的那部分用量,
   会让这个数字**偏低**——它是不显示之外的次优选择,不是等价替代。
-- **余额是「账号级」的,不是「key 级」**:官方 `GET /user/balance` 只回答账号还剩多少钱(本插件实测账号只有 USD 币种,所以显示 `$`;若账号持有人民币,会同时列出 `¥`)。它**不区分是哪把 key 花的**;要按 key/按天看明细,只能登录平台网页(那是需要登录态 `userToken` 的私有接口,本插件不碰)。
+- **余额是「账号级」的,不是「key 级」**:官方 `GET /user/balance` 只回答**账号**还剩多少钱(实测某账号只有 CNY 币种,所以显示 `¥`;若账号持有美元,会同时列出 `$`)。它**不区分是哪把 key 花的**;要按 key/按天看明细,只能登录平台网页(那是需要登录态 `userToken` 的私有接口,本插件不碰)。
+- **只有 DeepSeek 官方签发的 key 查得到余额**:下拉里那些中转站/第三方的 key(如 `MIXTOKEN_API_KEY`)拿官方 `user/balance` 去问会得到 401,插件会如实显示「DeepSeek 拒绝了这个 API key(HTTP 401);只有 DeepSeek 官方的 key 能查余额」,而不是显示 0 或空白。
+- **同一账号的两把 key 查出的是同一个数**(见上一条:接口是账号级的);所以下拉切 key 时看到的钱一样,不代表插件取错了 key——悬停提示里的「来源:xxx」会告诉你这次用的是哪把。
 - **余额只有 2 位小数**:所以它适合看"还剩多少、今天掉了多少",不适合看单次调用花了多少(几分钱要累积到 0.01 才可见)。余额的变化量与统计页的**本机累计**互为对账:差额就是别的机器/别的工具花的。
-- 余额的缓存是双层且刻意很短:**宿主 15 秒 + 页面 15 秒**;点「刷新」会带 `?refresh=1` 同时绕过两层,所以"想立刻看到最新"永远是一个按钮的距离。
+- 余额的缓存是双层且刻意很短:**宿主 15 秒 + 页面 15 秒**,而且**按 key 名分开缓存**(换一把 key 绝不会显示上一把的数字);点「刷新」会带 `?refresh=1` 绕过两层。手动粘贴的 key **完全不缓存**,点一次查一次。
+- 手动输入的 key 默认**只活在当前页面**:刷新/关掉页面就没了(这是刻意的,插件不替你保管密钥)。想长期用,要么在「设置 → 模型」里正式配置,要么在输入框旁勾选「存入 DSH 凭据库」——它写进的是 DSH 的凭据文件,下一份 DSH 凭据也是读那里。
 - **会话日志格式 v4**(DSH 0.1.7 起):v4 把工具结果提升为工具角色、重命名生产者来源、补齐中断回合。
   实测**同一会话的 v3 与 v4 两份日志,共同回合逐条数字完全一致**,因此本插件不需要改折算逻辑:
   宿主半边本来就走 `sessionPersistence`(与格式无关),两个诊断脚本也已改为读取**所有代际**
@@ -435,11 +443,20 @@ peak/off-peak window, cache-hit ratio, uncached / cached input and output lines,
 over the loaded turns) — see the screenshots above. A **Cost stats** settings page lists every billed item
 of every stored session, per reply and per context compaction, with day/month pickers and 15-row pages.
 
-It renders **nothing** when an item cannot be priced, reads no credentials, and needs no core change: it
+It renders **nothing** when an item cannot be priced and needs no core change: it
 registers into the documented `conversation.chat.assistant-actions` and `settings.section` slots, depends
 only on the frozen platform modules, and reads the durable session logs from its own host route
 (`GET /cost-stats/usage`, same origin, no external network). Both entries sit behind an error boundary, so
 a plugin failure can only remove the plugin's own UI, never the official controls beside it.
+
+The settings page also shows the **account balance** (`GET /user/balance`) and, since 0.9.0, lets the reader
+**pick which API key to query**: a dropdown lists the credential NAMES this harness knows
+(`DEEPSEEK_API_KEY`, a relay's key, …) plus a "paste a key" entry, and **Check key balance** asks DeepSeek
+with the picked one. A name is all the page ever holds — the host resolves the value through DSH's own
+credential service and its `describe` member (which never returns a value); a pasted key travels in a POST
+body, lives in the page's memory only, and is written to DSH's credential store solely when the reader ticks
+the box that says so. Both credential routes answer loopback callers only, and no key value reaches a
+response, a log line or a URL.
 
 Verified against the account balance: three reconciliation windows on 2026-09-11 matched to within one cent
 (0.25 vs 0.249, 0.78 vs 0.77, and 0.200 vs 0.200), with context compactions folded in from 0.6.0 on.

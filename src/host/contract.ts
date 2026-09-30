@@ -91,13 +91,17 @@ export interface WebRouteLike {
  * The incoming request, narrowed to what the plugin reads.
  *
  * Only the balance route needs it: the peer address and the `Host` header are
- * what decide whether a caller may read a credential-backed endpoint.
+ * what decide whether a caller may read a credential-backed endpoint, and the
+ * async iterator is how a `POST` body (a key typed into the page) is read — a
+ * body rather than a query string, so a pasted secret never lands in a URL.
  */
 export interface ServerRequestLike {
   readonly method?: string
   readonly url?: string
   readonly headers?: Readonly<Record<string, string | readonly string[] | undefined>>
   readonly socket?: { readonly remoteAddress?: string }
+  /** Node's `IncomingMessage` iteration over body chunks, when present. */
+  readonly [Symbol.asyncIterator]?: () => AsyncIterator<unknown>
 }
 
 /** The webserver service slice this plugin uses. */

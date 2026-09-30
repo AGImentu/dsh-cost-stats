@@ -1,20 +1,24 @@
 /**
  * Host half of dsh-cost-stats.
  *
- * Three jobs:
+ * Four jobs:
  *
  * 1. be a live Loader row so `dsh-client-modules` discovers this package's
  *    `dsh.client` declaration and composes `lib/client.js` into the browser
  *    boot graph;
  * 2. serve the statistics page's data: `GET /cost-stats/usage` folds every
  *    stored session log into per-reply priced rows (`CostStatsIndex`);
- * 3. serve the account's balance: `GET /cost-stats/balance` resolves the
- *    harness's own `DEEPSEEK_API_KEY` from the credential service, asks DeepSeek
- *    once, and returns numbers only (`host/balance-route.ts`). The key is never
- *    stored by the plugin, never sent to the page, and never logged — which is
- *    what makes publishing this plugin safe.
+ * 3. serve the account's balance: `GET|POST /cost-stats/balance` uses either a
+ *    named credential from DSH's store or a key the reader typed, asks DeepSeek
+ *    once, and returns numbers only (`host/balance-route.ts`). No key value is
+ *    ever stored by the plugin, sent to the page, or logged — which is what makes
+ *    publishing this plugin safe;
+ * 4. serve the key catalog: `GET /cost-stats/keys` lists which credential
+ *    references exist (`DEEPSEEK_API_KEY`, a relay's key, …) with their
+ *    configured state, using the value-free `describe` member of the credential
+ *    service (`host/key-catalog.ts`). That is what the page's dropdown renders.
  *
- * Both routes are plain same-origin JSON endpoints registered through
+ * All routes are plain same-origin JSON endpoints registered through
  * `ctx.webServer`, so they ride the app's existing browser authentication and
  * need no separate token, no RPC envelope and no client half cooperation beyond
  * a `fetch`. Nothing here touches the session loop, and a failure is contained:
@@ -27,6 +31,7 @@
 import type { HostContextLike, ServerResponseLike } from './host/contract.ts'
 import { CostStatsIndex } from './host/cost-stats-index.ts'
 import { registerBalanceRoute } from './host/balance-route.ts'
+import { registerKeysRoute } from './host/keys-route.ts'
 import { USAGE_ROUTE } from './routes.ts'
 
 /** Cordis plugin name, matching the package name and the patched row id. */
@@ -63,7 +68,7 @@ function wantsRefresh(req: unknown): boolean {
 }
 
 /**
- * Mount the plugin: the usage route plus the balance readout.
+ * Mount the plugin: the usage route, the balance readout and the key catalog.
  *
  * `credentials` is deliberately NOT in `inject`: the balance is a decoration on
  * the statistics page, and a host without that provider should still get the
@@ -89,4 +94,6 @@ export function apply(ctx: HostContextLike): void {
   }), 'dsh-cost-stats: usage route')
 
   ctx.effect(() => registerBalanceRoute(ctx), 'dsh-cost-stats: balance route')
+
+  ctx.effect(() => registerKeysRoute(ctx), 'dsh-cost-stats: keys route')
 }
