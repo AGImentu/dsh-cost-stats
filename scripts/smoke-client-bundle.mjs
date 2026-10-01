@@ -152,6 +152,27 @@ function canHoldRef(type) {
   return typeof type !== 'function' || type.prototype?.isReactComponent !== undefined
 }
 
+/**
+ * Every host tag name in a stub tree (`select`, `button`, `input`, …).
+ *
+ * Used to prove a SHAPE rather than a wording: the page offers exactly one
+ * dropdown and no text field, so there is no surface on which a key could be
+ * typed or pasted.
+ * @param node - the stub element tree.
+ * @param out - accumulator.
+ * @returns the tag names, in tree order.
+ */
+function collectTags(node, out = []) {
+  if (node === null || typeof node !== 'object') return out
+  if (Array.isArray(node)) {
+    for (const child of node) collectTags(child, out)
+    return out
+  }
+  if (typeof node.type === 'string') out.push(node.type)
+  collectTags(node.props?.children, out)
+  return out
+}
+
 /** One reply row for the host-fold fallback, priced off-peak Flash: ¥5. */
 const foldRow = {
   sessionId: 's1',
@@ -191,7 +212,6 @@ const keysPayload = {
     { ref: 'DEEPSEEK_API_KEY', label: 'DeepSeek', configured: true, origin: 'default' },
     { ref: 'MIXTOKEN_API_KEY', label: 'https://api.mixtoken.ai/v1', configured: true, origin: 'store', provider: 'mixtoken' },
   ],
-  canRemember: true,
 }
 
 const loaded = []
@@ -423,43 +443,31 @@ check(`an echoing host translator still renders Chinese (got "${echoText.slice(0
 check('no raw locale key reaches the page through the echoing translator',
   !/stats\.[a-z]/i.test(echoText) && !/cost\.[a-z]/i.test(echoText))
 
-// 8. The balance number itself, now that the stores have settled: a reopen
-// starts from the store's snapshot, so the page shows money instead of a
-// spinner.
-//
-// The catalog decides which name to ask about, so the balance request only
-// happens on a render that already sees the catalog — this "priming" render is
-// that one, and the assertion renders after its answer arrived.
-renderTree(statsEntry.component({ t: undefined }))
-await new Promise((resolve) => { setTimeout(resolve, 20) })
+// 8. The model row, after the catalog has settled. Nothing here may fetch a
+// balance: that only happens when the reader presses the button (the DOM test
+// covers the click; this renderer has no events and no re-render).
 const reopenedTree = renderTree(statsEntry.component({ t: undefined }))
 const reopened = collectText(reopenedTree).join(' ')
-check(`stats page shows the queried balance on reopen (got "${reopened.slice(0, 80)}")`,
-  reopened.includes('余额 $5.24'))
+check(`stats page asks for no balance on its own (got ${JSON.stringify(fetched.filter(url => url.includes('balance')))})`,
+  !fetched.some(url => url.includes('/cost-stats/balance')))
+check(`the balance readout starts out unasked (got "${reopened.slice(0, 160)}")`,
+  reopened.includes('未查询'))
 check('the balance readout never carries a credential-shaped string',
   !/sk-[A-Za-z0-9_-]{8,}/.test(reopened))
-// A failed read — or a page opened before the key was configured — must be one
-// click from another attempt, which is why the readout is a button.
-check('the balance readout is clickable, so a failed query can be retried',
-  collectProp(reopenedTree, 'onClick').some(handler => typeof handler === 'function'))
 
-// 8b. The key row: the dropdown lists the catalog's NAMES (plus the manual
-// entry), the button says what it does, and the balance query names the key it
-// was asked about instead of silently using "whatever is configured".
+// 8b. The model row: 「全部」 first, then the catalog's models under the names
+// 「设置 → 模型」 uses, the query button, and no way to type a key at all.
 check(`stats page names the model providers from the catalog (got "${reopened.slice(0, 160)}")`,
   reopened.includes('DeepSeek') && reopened.includes('https://api.mixtoken.ai/v1'))
 check('the dropdown shows the model names, not the credential references',
   !reopened.includes('DEEPSEEK_API_KEY') && !reopened.includes('MIXTOKEN_API_KEY'))
-check('the key row keeps a manual entry reachable', reopened.includes('手动输入 key'))
-check('the key row carries the query button', reopened.includes('查询余额'))
-check('the key row is labelled 模型, like the model settings page', reopened.includes('模型'))
-check(`the balance query names the picked credential (got ${JSON.stringify(fetched)})`,
-  fetched.includes('/cost-stats/balance?ref=DEEPSEEK_API_KEY'))
-check('the balance query is a GET with no body, and no key ever reaches a URL',
-  requests.filter(entry => entry.url.includes('/cost-stats/balance'))
-    .every(entry => entry.method === undefined && entry.body === undefined))
-check('the chip says which model the money belongs to',
-  collectProp(reopenedTree, 'title').some(title => String(title).includes('来源:DeepSeek')))
+check('the first option is the unfiltered 「全部」', reopened.includes('全部'))
+check('the row offers no way to paste a key', !reopened.includes('手动输入'))
+check('the row carries the query button', reopened.includes('查询余额'))
+check('the row is labelled 模型, like the model settings page', reopened.includes('模型'))
+check('the row offers exactly one dropdown and no text field to paste a key into',
+  collectTags(reopenedTree).filter(tag => tag === 'select').length === 1
+  && !collectTags(reopenedTree).includes('input'))
 check('the page never renders a credential-shaped string',
   !/sk-[A-Za-z0-9_-]{8,}/.test(reopened) && !/sk-[A-Za-z0-9_-]{8,}/.test(JSON.stringify(requests)))
 

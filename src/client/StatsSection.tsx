@@ -24,7 +24,6 @@ import type { TurnCostRow, UsagePayload } from '../rows.ts'
 import type { BalancePayload, KeysPayload } from '../balance.ts'
 import * as balanceStore from './balance-store.ts'
 import * as keyStore from './key-store.ts'
-import { BalanceChip } from './BalanceChip.tsx'
 import { KeyPicker } from './KeyPicker.tsx'
 import type { CostStatsProps, Translator } from './contract.ts'
 import { fallbackTranslator } from './locales.ts'
@@ -81,29 +80,23 @@ export function CostStatsSection({ t }: CostStatsProps): ReactNode {
   /** 1-based page inside the current selection. */
   const [page, setPage] = useState(1)
   /**
-   * Which key the money comes from. A NAME (`DEEPSEEK_API_KEY`, a relay's key)
-   * is all the page ever holds in this mode — the host resolves the value.
+   * Which model's replies the table below shows. `undefined` = 「全部」 (the
+   * default). A credential NAME is all the page ever holds — the host resolves
+   * the value when the balance is asked for.
    */
-  const [mode, setMode] = useState<'ref' | 'manual'>('ref')
   const [ref, setRef] = useState<string | undefined>(() => keyStore.storedRef(undefined))
-  /** A pasted key. Component state only: never persisted, never in a URL. */
-  const [manualKey, setManualKey] = useState('')
-  const [remember, setRemember] = useState(false)
-  const [rememberAs, setRememberAs] = useState('')
-  /** The catalog of selectable key names (names and flags only). */
+  /** The catalog of selectable models (names and provider ids only). */
   const [catalog, setCatalog] = useState<KeysPayload | undefined>(() => keyStore.snapshot())
   /**
-   * The account balance. Seeded from the store for the key the reader is most
-   * likely pointed at (the remembered name, else the harness default), so a
-   * reopen shows money instead of a spinner — and never another key's money,
-   * because the seed is looked up BY NAME like every other read.
+   * The last balance the reader asked for, and whether a request is in flight.
+   * Seeded from the store so a reopen still shows what was queried — but nothing
+   * is ever fetched on open: the balance is a deliberate question.
    */
   const [balance, setBalance] = useState<BalancePayload | undefined>(() => {
-    const known = keyStore.snapshot()
-    const pointer = keyStore.storedRef(known) ?? known?.default
-    return pointer === undefined ? undefined : balanceStore.snapshot({ kind: 'ref', ref: pointer })
+    const known = keyStore.storedRef(keyStore.snapshot())
+    return known === undefined ? undefined : balanceStore.snapshot(known)
   })
-  const [balanceLoading, setBalanceLoading] = useState(true)
+  const [balanceLoading, setBalanceLoading] = useState(false)
 
   /**
    * Load the payload from the host route.
@@ -127,90 +120,69 @@ export function CostStatsSection({ t }: CostStatsProps): ReactNode {
 
   // The catalog is fetched once per page; the last stored name is only honoured
   // if it is still offered, so a deleted key cannot leave the page pointed at
-  // nothing.
+  // nothing (that case falls back to 「全部」).
   useEffect(() => {
     let alive = true
     const apply = (next: KeysPayload): void => {
       if (!alive) return
       setCatalog(next)
-      setRef(current => current ?? keyStore.storedRef(next) ?? next.default)
+      setRef(current => current ?? keyStore.storedRef(next))
     }
     void keyStore.load().then(apply)
     const off = keyStore.subscribe(apply)
     return () => { alive = false; off() }
   }, [])
 
-  /** The named credential the readout is pointed at, when one is chosen. */
-  const targetRef = mode === 'manual' ? undefined : (ref ?? catalog?.default)
-
   /**
-   * Follow the current pointer: show whatever is already known for THAT key
-   * (`undefined` for a key nobody queried yet), then query it.
+   * Query the balance of the model on screen.
    *
-   * Depending on the pointer rather than on every render is what keeps switching
-   * keys from ever showing another key's money: a different name is a different
-   * problem, and the cache is keyed by name for the same reason.
-   */
-  useEffect(() => {
-    if (mode === 'manual') {
-      // A pasted key is never queried just because the page opened: it is sent
-      // on the click that asked for it.
-      setBalance(balanceStore.snapshot({ kind: 'manual', key: '' }))
-      setBalanceLoading(false)
-      return
-    }
-    if (targetRef === undefined) return
-    setBalance(balanceStore.snapshot({ kind: 'ref', ref: targetRef }))
-    setBalanceLoading(true)
-    void balanceStore.load({ kind: 'ref', ref: targetRef }).then((next) => {
-      setBalance(next)
-      setBalanceLoading(false)
-    })
-  }, [mode, targetRef])
-
-  /**
-   * Query the balance of whatever is currently picked — the button, the chip and
-   * the page's own 「刷新」 all land here, so none of them can query a different
-   * key than the one on screen.
+   * With no model picked the harness default answers — that is the key DSH itself
+   * uses for DeepSeek, and the one a reader asking "how much is left?" means.
+   * Nothing happens without this click.
    */
   const queryBalance = useCallback((): void => {
-    if (mode === 'manual') {
-      const key = manualKey.trim()
-      if (key.length === 0) return
-      setBalanceLoading(true)
-      void balanceStore.load({
-        kind: 'manual',
-        key,
-        ...(remember ? { remember: true } : {}),
-        ...(rememberAs.trim() === '' ? {} : { rememberAs: rememberAs.trim() }),
-      }, true).then((next) => { setBalance(next); setBalanceLoading(false) })
-      return
-    }
-    if (targetRef === undefined) return
+    const target = ref ?? catalog?.default
+    if (target === undefined) return
     setBalanceLoading(true)
-    void balanceStore.load({ kind: 'ref', ref: targetRef }, true).then((next) => {
+    void balanceStore.load(target, true).then((next) => {
       setBalance(next)
       setBalanceLoading(false)
     })
-  }, [mode, manualKey, remember, rememberAs, targetRef])
+  }, [ref, catalog])
 
-  // The usage payload is queried on open; the balance follows its own pointer.
+  // The usage payload is queried on open; the balance only on request.
   useEffect(() => { load(false) }, [load])
 
   const rows = payload?.rows ?? []
   const dataDays = useMemo(() => new Set(rows.map(row => dayKeyOf(row.at))), [rows])
   const dataMonths = useMemo(() => new Set(rows.map(row => monthKeyOf(row.at))), [rows])
+  /** The provider ids the picked model pays for: `undefined` = no filter at all. */
+  const providerIds = useMemo(
+    () => keyStore.providerIdsOf(ref === undefined ? { kind: 'all' } : { kind: 'ref', ref }, catalog),
+    [ref, catalog],
+  )
   const selected = useMemo(() => {
-    if (day !== undefined) return rows.filter(row => dayKeyOf(row.at) === day)
-    if (month !== undefined) return rows.filter(row => monthKeyOf(row.at) === month)
-    return rows
-  }, [rows, day, month])
+    const inRange = day !== undefined
+      ? rows.filter(row => dayKeyOf(row.at) === day)
+      : month !== undefined
+        ? rows.filter(row => monthKeyOf(row.at) === month)
+        : rows
+    if (providerIds === undefined) return inRange
+    // A reply records the provider that served it, so "this model's usage" is a
+    // membership test. An unknown mapping filters everything out rather than
+    // pretending the money went somewhere it did not.
+    return inRange.filter(row => row.provider !== undefined && providerIds.includes(row.provider))
+  }, [rows, day, month, providerIds])
   const totals = useMemo(() => totalsOf(selected), [selected])
   // A selection change or a reload can leave the stored page out of range; the
   // clamp happens inside `paginate`, so no effect and no extra frame is involved.
   const { page: current, pages, rows: visible } = paginate(selected, page, PAGE_SIZE)
   const now = Date.now()
-  const scope = day ?? month ?? tr('stats.scope.all')
+  /** The header of the total card: which day/month AND which model it covers. */
+  const modelLabel = ref === undefined
+    ? tr('stats.key.all')
+    : (keyStore.rowOf(ref, catalog)?.label ?? ref)
+  const scope = `${day ?? month ?? tr('stats.scope.all')} · ${modelLabel}`
 
   /** Switch the day filter, dropping the month filter and restarting at page 1. */
   const pickDay = useCallback((key: string | undefined): void => {
@@ -226,11 +198,6 @@ export function CostStatsSection({ t }: CostStatsProps): ReactNode {
     setPage(1)
   }, [])
 
-  /** What the chip's tooltip calls the money's source: the model's own name. */
-  const sourceLabel = mode === 'manual'
-    ? tr('stats.balance.manualSource')
-    : (catalog?.refs.find(row => row.ref === targetRef)?.label ?? targetRef)
-
   return (
     <div className={CLASS.stats} data-cost-stats-page>
       <div className={CLASS.statsHead}>
@@ -238,39 +205,21 @@ export function CostStatsSection({ t }: CostStatsProps): ReactNode {
           <div className={CLASS.statsTitle}>{tr('stats.title')}</div>
           <div className={CLASS.statsSubtitle}>{tr('stats.subtitle')}</div>
         </div>
-        <BalanceChip
-          payload={balance}
-          loading={balanceLoading}
-          onQuery={queryBalance}
-          tr={tr}
-          source={sourceLabel}
-          disabled={mode === 'manual' && manualKey.trim().length === 0}
-        />
       </div>
 
       <KeyPicker
         catalog={catalog}
-        mode={mode}
-        selectedRef={targetRef}
-        manualKey={manualKey}
-        remember={remember}
-        rememberAs={rememberAs}
+        selectedRef={ref}
+        balance={balance}
         loading={balanceLoading}
-        disabled={mode === 'manual' && manualKey.trim().length === 0}
         onPickRef={(next) => {
-          setMode('ref')
           setRef(next)
           keyStore.storeRef(next)
+          // Show whatever is already known for the newly picked model, so the
+          // readout never lingers on another key's money.
+          setBalance(next === undefined ? undefined : balanceStore.snapshot(next))
+          setPage(1)
         }}
-        onPickManual={() => { setMode('manual') }}
-        onManualKey={setManualKey}
-        onRemember={(next) => {
-          setRemember(next)
-          // A name is required to store a key; offering one that is still free
-          // is the difference between "works" and "silently overwrote my key".
-          if (next && rememberAs.trim() === '') setRememberAs(keyStore.suggestRefName(catalog))
-        }}
-        onRememberAs={setRememberAs}
         onQuery={queryBalance}
         tr={tr}
       />
@@ -300,7 +249,7 @@ export function CostStatsSection({ t }: CostStatsProps): ReactNode {
         <button
           type="button"
           className={CLASS.pickerAction}
-          onClick={() => { load(true); queryBalance() }}
+          onClick={() => { load(true) }}
         >
           {tr('stats.refresh')}
         </button>

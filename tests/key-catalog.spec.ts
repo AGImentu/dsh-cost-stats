@@ -185,6 +185,30 @@ describe('buildCatalog', () => {
     expect(rows[1]).toMatchObject({ ref: 'MIXTOKEN_API_KEY', origin: 'store', provider: 'mixtoken', label: 'Mixtoken' })
   })
 
+  it('collects every provider id a credential pays for, including the built-in one', () => {
+    const rows = buildCatalog({
+      defaultRef: 'DEEPSEEK_API_KEY',
+      storeRefs: ['MIXTOKEN_API_KEY'],
+      // Two providers sharing one reference: the filter needs both ids, or one
+      // of them would silently disappear from the table.
+      configRefs: [
+        { ref: 'MIXTOKEN_API_KEY', provider: 'mixtoken' },
+        { ref: 'MIXTOKEN_API_KEY', provider: 'mixtoken-backup' },
+      ],
+      envHas: () => false,
+      state: () => 'set',
+    })
+    expect(rows[0]).toMatchObject({
+      ref: 'DEEPSEEK_API_KEY',
+      label: 'DeepSeek',
+      providers: ['deepseek-official'],
+    })
+    expect(rows[1]).toMatchObject({
+      ref: 'MIXTOKEN_API_KEY',
+      providers: ['mixtoken', 'mixtoken-backup'],
+    })
+  })
+
   it('reports a reference the service says is not configured', () => {
     expect(catalog('unset').map(row => row.configured)).toEqual([false, false, false])
   })

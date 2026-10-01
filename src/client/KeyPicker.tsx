@@ -1,70 +1,58 @@
 /**
- * The "which key?" row above the statistics: a dropdown, an optional pasted key,
- * and the button that queries DeepSeek's official balance endpoint with it.
+ * The "which model?" row above the statistics: the filter dropdown, the button
+ * that asks DeepSeek for a balance, and the answer to its right.
  *
- * The dropdown lists the credential NAMES this harness knows (DSH's own
- * `DEEPSEEK_API_KEY`, a relay's key, …) because that is the same set the reader
- * sees in the model settings. Picking one sends only its NAME: the host resolves
- * the value and the page never sees it.
+ * The dropdown lists 「全部」(no filter, the default) and then the model providers
+ * this harness has credentials for, labelled the way 「设置 → 模型」 labels them.
+ * Picking one does two things at once: the table below is filtered to the replies
+ * that provider served, and the button becomes "query THIS key's balance".
  *
- * "手动输入" exists for a key that is not configured in DSH at all. Such a key is
- * held in this component's state, sent in a request BODY on the click that asked
- * for it, and stored nowhere — unless the reader ticks 「存入 DSH 凭据库」, which
- * asks the host to write it into DSH's own credential store (the supported place
- * for a secret), never into this plugin's files.
+ * Nothing is fetched until the button is pressed — the balance is a deliberate
+ * question, not a decoration. Picking a model sends only its NAME, which the host
+ * resolves through DSH's credential service; the page never sees a key value.
  *
  * @module dsh-cost-stats/client/KeyPicker
  */
 
 import type { ReactNode } from 'react'
-import type { KeysPayload } from '../balance.ts'
+import type { BalanceInfo, BalancePayload, KeysPayload } from '../balance.ts'
 import type { Translator } from './contract.ts'
 import { CLASS } from './styles.ts'
-import { MANUAL_OPTION } from './key-store.ts'
 
-/** Props for the row. All state is owned by the page, so a refresh can reuse it. */
-export interface KeyPickerProps {
-  /** Catalog of selectable key names (names only, by construction). */
-  readonly catalog: KeysPayload | undefined
-  /** `'ref'` = use a named credential, `'manual'` = use the pasted key. */
-  readonly mode: 'ref' | 'manual'
-  /**
-   * The picked credential name (ignored in manual mode).
-   *
-   * Deliberately NOT named `ref`: React reserves that prop. A function component
-   * never receives it (the value is diverted before props), and a STRING `ref`
-   * makes React throw ("Element ref was specified as a string ... but no owner
-   * was set"). 0.9.0 shipped with `ref={targetRef}`, the boundary caught that
-   * throw, and the settings page rendered blank.
-   */
-  readonly selectedRef: string | undefined
-  /** The pasted key; lives in memory only. */
-  readonly manualKey: string
-  /** Whether the pasted key should be written into DSH's credential store. */
-  readonly remember: boolean
-  /** The name to store it under. */
-  readonly rememberAs: string
-  /** Whether a query is in flight. */
-  readonly loading: boolean
-  /** Whether the current pointer can be queried at all. */
-  readonly disabled: boolean
-  readonly onPickRef: (ref: string) => void
-  readonly onPickManual: () => void
-  readonly onManualKey: (value: string) => void
-  readonly onRemember: (value: boolean) => void
-  readonly onRememberAs: (value: string) => void
-  readonly onQuery: () => void
-  readonly tr: Translator
+/** The `<select>` value that means "no model filter". */
+export const ALL_OPTION = '__all__'
+
+/** Currency symbol for the amounts DeepSeek reports. */
+function symbolOf(currency: string): string {
+  if (currency === 'CNY') return '¥'
+  if (currency === 'USD') return '$'
+  return `${currency} `
+}
+
+/**
+ * One amount, always with the API's own two decimals.
+ * @param info - the currency's balance entry.
+ * @returns the formatted amount.
+ */
+function amountOf(info: BalanceInfo): string {
+  return `${symbolOf(info.currency)}${info.total.toFixed(2)}`
+}
+
+/** Local clock label for the query time. */
+function clockOf(at: number): string {
+  const date = new Date(at)
+  const pad = (value: number): string => String(value).padStart(2, '0')
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
 /**
  * One option's label: what 「设置 → 模型」 calls this provider, plus a marker when
- * the reference is not configured.
+ * the credential is not configured.
  *
  * The credential's own name (`DEEPSEEK_API_KEY`) is deliberately not the visible
- * text — the reader picks a MODEL PROVIDER, so the dropdown reads like the model
- * settings page. The reference stays on the option's tooltip for anyone who
- * needs to know which credential a row resolves.
+ * text — the reader picks a MODEL, so the dropdown reads like the model settings
+ * page. The reference stays on the option's tooltip for anyone who needs to know
+ * which credential a row resolves.
  * @param row - one catalog entry.
  * @param tr - translator.
  * @returns the label.
@@ -75,32 +63,99 @@ function optionLabel(row: KeysPayload['refs'][number], tr: Translator): string {
 }
 
 /**
- * The tooltip for one option: which credential it is, and where it came from.
+ * The tooltip for one option: which credential it is, and what it filters to.
  * @param row - one catalog entry.
  * @param tr - translator.
  * @returns the tooltip text.
  */
 function optionHint(row: KeysPayload['refs'][number], tr: Translator): string {
   const parts = [tr('stats.key.optionRef', { ref: row.ref })]
-  if (row.provider !== undefined && row.provider !== '') {
-    parts.push(tr('stats.key.optionProvider', { provider: row.provider }))
-  }
+  const providers = row.providers ?? []
+  parts.push(providers.length === 0
+    ? tr('stats.key.optionNoProvider')
+    : tr('stats.key.optionProviders', { providers: providers.join(', ') }))
   parts.push(row.configured ? tr('stats.key.optionSet') : tr('stats.key.optionUnset'))
   return parts.join('\n')
 }
 
+/** Props for the row. All state is owned by the page, so a refresh can reuse it. */
+export interface KeyPickerProps {
+  /** Catalog of selectable models (names only, by construction). */
+  readonly catalog: KeysPayload | undefined
+  /** The picked credential name, or undefined for 「全部」. */
+  readonly selectedRef: string | undefined
+  /**
+   * The balance of the picked credential, once the reader asked for it.
+   * `undefined` means "not queried yet" — the page does not ask on its own.
+   */
+  readonly balance: BalancePayload | undefined
+  /** Whether a balance query is in flight. */
+  readonly loading: boolean
+  readonly onPickRef: (ref: string | undefined) => void
+  readonly onQuery: () => void
+  readonly tr: Translator
+}
+
 /**
- * The key row.
- * @param props - catalog, current pointer, paste state and the actions.
+ * The balance readout: numbers when there are numbers, and a readable reason when
+ * there are none. It is a `<span>`, not a button — the query button sits to its
+ * left and is the only thing that fires a request.
+ * @param props - the payload, the loading flag and the translator.
+ * @returns the readout.
+ */
+function BalanceText(props: { payload: BalancePayload | undefined, loading: boolean, tr: Translator }): ReactNode {
+  const { payload, loading, tr } = props
+  const hint = tr('stats.balance.hint')
+  if (loading) return <span className={CLASS.keyBalance} data-tone="warn">{tr('stats.balance.loading')}</span>
+  if (payload === undefined) {
+    return <span className={CLASS.keyBalance} data-tone="warn">{tr('stats.balance.notQueried')}</span>
+  }
+
+  if (!payload.ok) {
+    const label = payload.reason === 'no-key' || payload.reason === 'credentials-unavailable'
+      ? tr('stats.balance.noKey')
+      : payload.reason === 'forbidden'
+        ? tr('stats.balance.localOnly')
+        : payload.reason === 'bad-request'
+          ? tr('stats.balance.badKey')
+          : tr('stats.balance.retry')
+    return (
+      <span className={CLASS.keyBalance} data-tone="warn" title={[payload.message, hint].filter(Boolean).join('\n')}>
+        {label}
+      </span>
+    )
+  }
+
+  const infos = payload.infos ?? []
+  const detail = infos
+    .map(info => tr('stats.balance.breakdown', {
+      total: amountOf(info),
+      toppedUp: `${symbolOf(info.currency)}${info.toppedUp.toFixed(2)}`,
+      granted: `${symbolOf(info.currency)}${info.granted.toFixed(2)}`,
+    }))
+    .join(' · ')
+  const when = payload.at === undefined ? '' : tr('stats.balance.at', { time: clockOf(payload.at) })
+  return (
+    <span
+      className={CLASS.keyBalance}
+      data-tone={payload.available === false ? 'warn' : undefined}
+      title={[payload.available === false ? tr('stats.balance.unavailable') : undefined, detail, when, hint]
+        .filter(part => part !== undefined && part !== '')
+        .join('\n')}
+    >
+      {tr('stats.balance.label', { amount: infos.map(amountOf).join(' · ') })}
+    </span>
+  )
+}
+
+/**
+ * The model row.
+ * @param props - catalog, current selection, the balance to show and the actions.
  * @returns the row.
  */
 export function KeyPicker(props: KeyPickerProps): ReactNode {
-  const {
-    catalog, mode, selectedRef, manualKey, remember, rememberAs, loading, disabled,
-    onPickRef, onPickManual, onManualKey, onRemember, onRememberAs, onQuery, tr,
-  } = props
+  const { catalog, selectedRef, balance, loading, onPickRef, onQuery, tr } = props
   const rows = catalog?.refs ?? []
-  const manual = mode === 'manual'
 
   return (
     <div className={CLASS.keyRow}>
@@ -108,68 +163,31 @@ export function KeyPicker(props: KeyPickerProps): ReactNode {
       <select
         className={CLASS.keySelect}
         aria-label={tr('stats.key.label')}
-        value={manual ? MANUAL_OPTION : (selectedRef ?? '')}
+        value={selectedRef ?? ALL_OPTION}
         onChange={(event) => {
           const value = event.target.value
-          if (value === MANUAL_OPTION) onPickManual()
-          else onPickRef(value)
+          onPickRef(value === ALL_OPTION ? undefined : value)
         }}
       >
-        {/* A harness whose catalog is still loading (or unavailable) still needs
-            a value the select can hold, and the manual entry must stay reachable
-            — that is exactly the case where the reader has to paste a key. */}
-        {rows.length === 0 && <option value="">{tr('stats.key.none')}</option>}
+        {/* 「全部」 is the default: no filter, every reply in the selected range. */}
+        <option value={ALL_OPTION} title={tr('stats.key.allHint')}>{tr('stats.key.all')}</option>
+        {/* A harness whose catalog is still loading simply has nothing else yet;
+            the option above keeps the select renderable in the meantime. */}
         {rows.map(row => (
           <option key={row.ref} value={row.ref} title={optionHint(row, tr)}>{optionLabel(row, tr)}</option>
         ))}
-        <option value={MANUAL_OPTION}>{tr('stats.key.manual')}</option>
       </select>
-
-      {manual && (
-        <input
-          className={CLASS.keyInput}
-          type="password"
-          value={manualKey}
-          spellCheck={false}
-          autoComplete="off"
-          placeholder={tr('stats.key.placeholder')}
-          aria-label={tr('stats.key.placeholder')}
-          onChange={(event) => { onManualKey(event.target.value) }}
-        />
-      )}
-
-      {manual && catalog?.canRemember === true && (
-        <label className={CLASS.keyRemember} title={tr('stats.key.rememberHint')}>
-          <input
-            type="checkbox"
-            checked={remember}
-            onChange={(event) => { onRemember(event.target.checked) }}
-          />
-          {tr('stats.key.remember')}
-        </label>
-      )}
-
-      {manual && remember && catalog?.canRemember === true && (
-        <input
-          className={CLASS.keyInput}
-          type="text"
-          value={rememberAs}
-          spellCheck={false}
-          autoComplete="off"
-          placeholder={tr('stats.key.rememberAsPlaceholder')}
-          aria-label={tr('stats.key.rememberAs')}
-          onChange={(event) => { onRememberAs(event.target.value) }}
-        />
-      )}
 
       <button
         type="button"
         className={CLASS.keyQuery}
         onClick={onQuery}
-        disabled={loading || disabled}
+        disabled={loading}
       >
         {tr('stats.key.query')}
       </button>
+
+      <BalanceText payload={balance} loading={loading} tr={tr} />
     </div>
   )
 }

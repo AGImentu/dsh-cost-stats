@@ -46,9 +46,8 @@ export const CLASS = {
   keyRow: 'dsh-cost-stats__keyRow',
   keyLabel: 'dsh-cost-stats__keyLabel',
   keySelect: 'dsh-cost-stats__keySelect',
-  keyInput: 'dsh-cost-stats__keyInput',
-  keyRemember: 'dsh-cost-stats__keyRemember',
   keyQuery: 'dsh-cost-stats__keyQuery',
+  keyBalance: 'dsh-cost-stats__keyBalance',
   toolbar: 'dsh-cost-stats__toolbar',
   field: 'dsh-cost-stats__field',
   pickerPanel: 'dsh-cost-stats__picker',
@@ -322,7 +321,8 @@ export const STYLES = `
   line-height: 18px;
 }
 
-/* Key row: which credential the money belongs to, and the button that asks. */
+/* Model row: which model the numbers belong to, the button that asks, and the
+   answer sitting right next to it. */
 .${CLASS.keyRow} {
   display: flex;
   align-items: center;
@@ -336,8 +336,7 @@ export const STYLES = `
   letter-spacing: 0.04em;
 }
 
-.${CLASS.keySelect},
-.${CLASS.keyInput} {
+.${CLASS.keySelect} {
   height: 28px;
   max-width: 260px;
   padding: 0 8px;
@@ -350,28 +349,8 @@ export const STYLES = `
   line-height: 18px;
 }
 
-.${CLASS.keySelect}:hover,
-.${CLASS.keyInput}:hover {
+.${CLASS.keySelect}:hover {
   border-color: var(--dsw-alias-border-l3);
-}
-
-.${CLASS.keyInput} {
-  min-width: 190px;
-  font-variant-numeric: tabular-nums;
-}
-
-.${CLASS.keyInput}::placeholder {
-  color: var(--dsw-alias-label-tertiary);
-}
-
-.${CLASS.keyRemember} {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 12px;
-  line-height: 18px;
-  cursor: pointer;
 }
 
 .${CLASS.keyQuery} {
@@ -394,6 +373,19 @@ export const STYLES = `
 .${CLASS.keyQuery}:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+/* The queried balance, immediately right of the button: a reading, not a control. */
+.${CLASS.keyBalance} {
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.${CLASS.keyBalance}[data-tone='warn'] {
+  color: var(--dsw-alias-label-tertiary);
 }
 
 /* Query toolbar: the two calendar fields plus text actions. */

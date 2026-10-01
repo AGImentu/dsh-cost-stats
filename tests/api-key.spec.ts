@@ -4,9 +4,7 @@ import {
   credentialsOf,
   describeApiKey,
   isApiKeyRef,
-  isApiKeyValue,
   readApiKey,
-  rememberApiKey,
 } from '../src/host/api-key.ts'
 import { handleBalanceRequest, readBalance, resetBalanceCache } from '../src/host/balance-route.ts'
 import type { BalancePayload } from '../src/balance.ts'
@@ -288,45 +286,9 @@ describe('handleBalanceRequest', () => {
     // …and still carries no value.
     expect(JSON.stringify(body())).not.toContain('sk-')
   })
-
-  it('takes a pasted key from a POST body and echoes no trace of it', async () => {
-    resetBalanceCache()
-    const fetchImpl = vi.fn(async (_input: string, _init?: RequestInit) => new Response(JSON.stringify({
-      balance_infos: [{ currency: 'CNY', total_balance: '9.99' }],
-    }), { status: 200 }))
-    const { res, body } = responseStub()
-    await handleBalanceRequest(
-      { credentials: { resolve: vi.fn() } },
-      postStub({ key: 'sk-pasted-secret-1234' }),
-      res,
-      { fetchImpl: fetchImpl as never },
-    )
-    expect((fetchImpl.mock.calls[0]?.[1] as RequestInit).headers)
-      .toMatchObject({ authorization: 'Bearer sk-pasted-secret-1234' })
-    expect(body().ok).toBe(true)
-    expect(body().manual).toBe(true)
-    expect(body().ref).toBeUndefined()
-    expect(JSON.stringify(body())).not.toContain('sk-pasted')
-    expect(String(fetchImpl.mock.calls[0]?.[0])).not.toContain('sk-pasted')
-  })
-
-  it('answers bad-request for a body that is not JSON, without querying', async () => {
-    resetBalanceCache()
-    const fetchImpl = vi.fn()
-    const { res, body } = responseStub()
-    await handleBalanceRequest(
-      { credentials: { resolve: vi.fn() } },
-      postStub('not json at all'),
-      res,
-      { fetchImpl: fetchImpl as never },
-    )
-    expect(res.statusCode).toBe(200)
-    expect(body().reason).toBe('bad-request')
-    expect(fetchImpl).not.toHaveBeenCalled()
-  })
 })
 
-describe('isApiKeyRef and isApiKeyValue', () => {
+describe('isApiKeyRef', () => {
   it('accepts the POSIX-style names the credential store is keyed by', () => {
     for (const name of ['DEEPSEEK_API_KEY', 'MIXTOKEN_API_KEY', '_x', 'A1']) {
       expect(isApiKeyRef(name)).toBe(true)
@@ -337,16 +299,6 @@ describe('isApiKeyRef and isApiKeyValue', () => {
     for (const name of ['', '1ABC', 'has-dash', 'has space', 'a'.repeat(65), 'sk-abc', null, 42]) {
       expect(isApiKeyRef(name)).toBe(false)
     }
-  })
-
-  it('accepts a plausible key and refuses whitespace, control characters and absurd lengths', () => {
-    expect(isApiKeyValue('sk-1234567890abcdef')).toBe(true)
-    expect(isApiKeyValue('  sk-1234567890abcdef \n')).toBe(true)
-    expect(isApiKeyValue('sk-1234')).toBe(false)
-    expect(isApiKeyValue('sk-1234 5678')).toBe(false)
-    expect(isApiKeyValue('sk-1234\n5678')).toBe(false)
-    expect(isApiKeyValue('x'.repeat(600))).toBe(false)
-    expect(isApiKeyValue(undefined)).toBe(false)
   })
 })
 
@@ -380,32 +332,6 @@ describe('describeApiKey', () => {
   })
 })
 
-describe('rememberApiKey', () => {
-  it('writes through the credential service, trimmed', async () => {
-    const set = vi.fn()
-    const ctx = { credentials: { resolve: vi.fn(), set } }
-    expect(await rememberApiKey(ctx, 'DEEPSEEK_API_KEY_2', '  sk-1234567890abcdef  ')).toBe('saved')
-    expect(set).toHaveBeenCalledWith('DEEPSEEK_API_KEY_2', 'sk-1234567890abcdef')
-  })
-
-  it('reports unsupported when the service cannot write', async () => {
-    expect(await rememberApiKey({ credentials: { resolve: vi.fn() } }, 'A_KEY', 'sk-1234567890abcdef'))
-      .toBe('unsupported')
-    expect(await rememberApiKey({}, 'A_KEY', 'sk-1234567890abcdef')).toBe('unsupported')
-  })
-
-  it('reports failed without the service message, and never calls set for junk', async () => {
-    const set = vi.fn(() => { throw new Error('cannot store sk-1234567890abcdef') })
-    expect(await rememberApiKey({ credentials: { resolve: vi.fn(), set } }, 'A_KEY', 'sk-1234567890abcdef'))
-      .toBe('failed')
-    set.mockClear()
-    expect(await rememberApiKey({ credentials: { resolve: vi.fn(), set } }, 'not a ref', 'sk-1234567890abcdef'))
-      .toBe('failed')
-    expect(await rememberApiKey({ credentials: { resolve: vi.fn(), set } }, 'A_KEY', 'sk-123'))
-      .toBe('failed')
-    expect(set).not.toHaveBeenCalled()
-  })
-})
 
 describe('readBalance by credential name', () => {
   /** A context whose two keys resolve to different values. */
@@ -460,51 +386,25 @@ describe('readBalance by credential name', () => {
     expect(bad.reason).toBe('bad-request')
     expect(untouched).not.toHaveBeenCalled()
   })
-})
 
-describe('readBalance with a pasted key', () => {
-  it('uses the key, marks the payload manual, and caches nothing', async () => {
-    resetBalanceCache()
-    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
-      balance_infos: [{ currency: 'CNY', total_balance: '7.00' }],
-    }), { status: 200 }))
-    const deps = { ctx: {}, fetchImpl: fetchImpl as never, now: () => 1000, ttlMs: 60_000 }
-    const first = await readBalance(deps, { key: 'sk-pasted-1234567890' })
-    const second = await readBalance(deps, { key: 'sk-pasted-1234567890' })
-    expect(first.manual).toBe(true)
-    expect(second.manual).toBe(true)
-    // A one-off secret is never reused: two clicks mean two requests.
-    expect(fetchImpl).toHaveBeenCalledTimes(2)
-  })
-
-  it('refuses a malformed key before it reaches a request header', async () => {
+  it('answers bad-request for a POST instead of reading a body', async () => {
     resetBalanceCache()
     const fetchImpl = vi.fn()
-    const payload = await readBalance({ ctx: {}, fetchImpl: fetchImpl as never }, { key: 'sk-bad\nkey' })
-    expect(payload.reason).toBe('bad-request')
-    expect(fetchImpl).not.toHaveBeenCalled()
-  })
-
-  it('stores the key only when asked, and reports what happened', async () => {
-    resetBalanceCache()
-    const set = vi.fn()
-    const fetchImpl = async (): Promise<Response> => new Response(JSON.stringify({
-      balance_infos: [{ currency: 'CNY', total_balance: '7.00' }],
-    }), { status: 200 })
-    const query = { key: 'sk-pasted-1234567890', remember: true, rememberAs: 'A_KEY' }
-
-    const saved = await readBalance(
-      { ctx: { credentials: { resolve: vi.fn(), set } }, fetchImpl: fetchImpl as never },
-      query,
+    const { res, body } = responseStub()
+    await handleBalanceRequest(
+      { credentials: { resolve: vi.fn() } },
+      {
+        method: 'POST',
+        url: '/cost-stats/balance',
+        headers: { host: '127.0.0.1:3080' },
+        socket: { remoteAddress: '::1' },
+      },
+      res,
+      { fetchImpl: fetchImpl as never },
     )
-    expect(set).toHaveBeenCalledWith('A_KEY', 'sk-pasted-1234567890')
-    expect(saved.remembered).toBe('saved')
-    expect(saved.ok).toBe(true)
-    expect(JSON.stringify(saved)).not.toContain('sk-pasted')
-
-    const unsupported = await readBalance({ ctx: {}, fetchImpl: fetchImpl as never }, query)
-    expect(unsupported.remembered).toBe('unsupported')
-    // Failing to store still answers with the balance: the query was the point.
-    expect(unsupported.ok).toBe(true)
+    // The page has no way to submit a key at all: only a named credential
+    // resolved by the host can be queried, so a body is refused outright.
+    expect(body().reason).toBe('bad-request')
+    expect(fetchImpl).not.toHaveBeenCalled()
   })
 })

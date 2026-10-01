@@ -24,7 +24,7 @@
 import { readFile, readdir, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { API_KEY_REF, credentialsOf, describeApiKey, isApiKeyRef } from './api-key.ts'
+import { API_KEY_REF, describeApiKey, isApiKeyRef } from './api-key.ts'
 import type { KeyRefInfo, KeyRefOrigin, KeysPayload } from '../balance.ts'
 
 /** Structural keys of the credential store, never credentials themselves. */
@@ -37,15 +37,20 @@ const MAX_FILE_BYTES = 256 * 1024
 const MAX_CONFIG_FILES = 8
 
 /**
- * Names for references this plugin knows by contract rather than by file.
+ * Facts about references this plugin knows by contract rather than by file.
  *
- * `DEEPSEEK_API_KEY` is declared by the DeepSeek provider that ships inside the
+ * `DEEPSEEK_API_KEY` is declared by the DeepSeek providers that ship inside the
  * harness, whose configuration is not a file on disk — so no scan can discover
- * the name 「设置 → 模型」 shows for it. This map is that one fact, kept in one
- * place; every other entry takes its label from the profile configuration.
+ * either the name 「设置 → 模型」 shows for it, or which model providers bill
+ * against it. Those two facts live here, in one place; every other entry takes
+ * both from the profile configuration.
+ *
+ * `deepseek-official` is the provider id the stored replies carry for the
+ * official API-key route (observed in real logs; `deepseek-account` is the
+ * separate login-account route, which has no API key at all).
  */
-const DEFAULT_LABELS: Readonly<Record<string, string>> = {
-  DEEPSEEK_API_KEY: 'DeepSeek',
+const BUILT_IN: Readonly<Record<string, { readonly label: string, readonly providers: readonly string[] }>> = {
+  DEEPSEEK_API_KEY: { label: 'DeepSeek', providers: ['deepseek-official'] },
 }
 
 /**
@@ -208,21 +213,27 @@ export function buildCatalog(input: CatalogInput): KeyRefInfo[] {
   }
   const add = (ref: string, origin: KeyRefOrigin, provider?: string, label?: string): void => {
     if (!isApiKeyRef(ref)) return
-    // A name the harness's own model configuration owns but no readable file
-    // declares: the provider's shipped name is what 「设置 → 模型」 shows.
-    const called = label ?? DEFAULT_LABELS[ref]
+    // Facts the harness owns but no readable file declares.
+    const builtIn = BUILT_IN[ref]
+    const called = label ?? builtIn?.label
+    const providers = [
+      ...(builtIn?.providers ?? []),
+      ...(provider === undefined ? [] : [provider]),
+    ]
     const existing = rows.find(row => row.ref === ref)
     if (existing !== undefined) {
       // A name seen twice keeps its earliest (most authoritative) origin, but a
-      // provider or label discovered later still helps the reader recognize it.
+      // provider id or label discovered later still sharpens the row: the
+      // provider ids are what the page filters the statistics by, so missing one
+      // would hide that provider's traffic.
+      const merged = [...new Set([...(existing.providers ?? []), ...providers])]
       const provider2 = existing.provider ?? provider
       const label2 = existing.label ?? called
-      if (provider2 !== existing.provider || label2 !== existing.label) {
-        rows[rows.indexOf(existing)] = {
-          ...existing,
-          ...(provider2 === undefined ? {} : { provider: provider2 }),
-          ...(label2 === undefined ? {} : { label: label2 }),
-        }
+      rows[rows.indexOf(existing)] = {
+        ...existing,
+        ...(provider2 === undefined ? {} : { provider: provider2 }),
+        ...(label2 === undefined ? {} : { label: label2 }),
+        ...(merged.length === 0 ? {} : { providers: merged }),
       }
       return
     }
@@ -232,6 +243,7 @@ export function buildCatalog(input: CatalogInput): KeyRefInfo[] {
       origin,
       ...(provider === undefined ? {} : { provider }),
       ...(called === undefined ? {} : { label: called }),
+      ...(providers.length === 0 ? {} : { providers }),
     })
   }
 
@@ -303,14 +315,12 @@ async function gatherEvidence(): Promise<{ storeRefs: string[], configRefs: Conf
  * Build the page's key catalog for this harness.
  *
  * The result never contains a value, by construction: nothing here ever resolves
- * a credential. `canRemember` tells the page whether the "store this key in DSH"
- * checkbox can do anything on this build.
+ * a credential — only `describe` (which cannot return one) is asked.
  * @param ctx - host context carrying the credential service.
  * @returns the `GET /cost-stats/keys` payload.
  */
 export async function keysPayload(ctx: object): Promise<KeysPayload> {
   const evidence = await gatherEvidence()
-  const caps = credentialsOf(ctx)
   const asked = new Map<string, 'set' | 'unset' | 'unknown'>()
   // `buildCatalog` is a pure function, so every answer is collected first and
   // then handed to it as a lookup.
@@ -328,10 +338,5 @@ export async function keysPayload(ctx: object): Promise<KeysPayload> {
     envHas: ref => (process.env[ref] ?? '').length > 0,
     state,
   })
-  return {
-    ok: true,
-    default: API_KEY_REF,
-    refs,
-    canRemember: typeof caps?.set === 'function',
-  }
+  return { ok: true, default: API_KEY_REF, refs }
 }

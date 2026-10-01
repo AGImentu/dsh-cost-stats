@@ -1,33 +1,30 @@
 /**
- * The key catalog store: which keys the dropdown offers, and which one is picked.
+ * The model catalog store: which models the dropdown offers, and which one is picked.
  *
- * Two very different kinds of state live here, and the difference is the point:
+ * Two very different kinds of state live here:
  *
- * - the **catalog** is a module-level cache of `GET /cost-stats/keys` — names,
- *   origins and configured flags, all of them safe to keep and to re-render;
- * - the **selection** is only remembered as a NAME. A key typed into the page is
- *   never stored here (not in this module, not in `localStorage`, not in any
- *   request the page makes on its own): it lives in the component's state for as
- *   long as the reader leaves it there.
+ * - the **catalog** is a module-level cache of `GET /cost-stats/keys` — model
+ *   names, provider ids and configured flags, all of them safe to keep and to
+ *   re-render;
+ * - the **selection** is one of: 「全部」(no filter at all, the default) or a
+ *   credential NAME. Only a name is remembered (in `localStorage`), and a name
+ *   is not a secret — the host resolves the value.
  *
  * @module dsh-cost-stats/client/key-store
  */
 
 import { KEYS_ROUTE } from '../routes.ts'
-import type { KeysPayload } from '../balance.ts'
+import type { KeyRefInfo, KeysPayload } from '../balance.ts'
 
 /** `localStorage` slot remembering the credential NAME the reader picked. */
 export const REF_STORAGE_KEY = 'dsh-cost-stats.balance.ref'
 
-/** The `<select>` value that means "let me type a key instead". */
-export const MANUAL_OPTION = '__manual__'
-
-/** What the balance readout is currently pointed at. */
+/** What the statistics page is currently pointed at. */
 export type Selection =
-  /** A named credential, resolved by the host from DSH's own store. */
+  /** No model filter: every reply, and the harness default key for a balance. */
+  | { readonly kind: 'all' }
+  /** One configured credential: its traffic, and its own balance. */
   | { readonly kind: 'ref', readonly ref: string }
-  /** A key the reader typed; it exists only in memory. */
-  | { readonly kind: 'manual' }
 
 let catalog: KeysPayload | undefined
 let inFlight: Promise<KeysPayload> | undefined
@@ -60,7 +57,7 @@ export function load(): Promise<KeysPayload> {
       if (!response.ok) throw new Error(String(response.status))
       return await response.json() as KeysPayload
     })
-    .catch((): KeysPayload => ({ ok: false, default: 'DEEPSEEK_API_KEY', refs: [], canRemember: false }))
+    .catch((): KeysPayload => ({ ok: false, default: 'DEEPSEEK_API_KEY', refs: [] }))
     .then((payload) => {
       catalog = payload
       for (const listener of listeners) listener(payload)
@@ -75,9 +72,9 @@ export function load(): Promise<KeysPayload> {
  * The credential name the reader last picked, if it is still offered.
  *
  * Remembering a NAME (never a key) is what makes reopening the page land on the
- * key you were looking at, without the page holding a secret across reloads.
+ * same model, without the page holding a secret across reloads.
  * @param payload - the catalog to validate against.
- * @returns the name to preselect, or undefined.
+ * @returns the name to preselect, or undefined for 「全部」.
  */
 export function storedRef(payload: KeysPayload | undefined): string | undefined {
   let name: string | undefined
@@ -106,26 +103,33 @@ export function storeRef(ref: string | undefined): void {
   }
 }
 
+/**
+ * The catalog row for a credential.
+ * @param ref - the credential name.
+ * @param payload - the catalog.
+ * @returns the row, or undefined.
+ */
+export function rowOf(ref: string, payload: KeysPayload | undefined): KeyRefInfo | undefined {
+  return payload?.refs.find(row => row.ref === ref)
+}
+
+/**
+ * The model-provider ids the picked credential pays for.
+ *
+ * This is the page's filter: a stored reply names the provider that served it, so
+ * the rows belonging to one model are the rows whose `provider` is in this set.
+ * `undefined` means "no filter" — the 「全部」 selection.
+ * @param selection - the current selection.
+ * @param payload - the catalog.
+ * @returns the provider ids, or undefined for no filter.
+ */
+export function providerIdsOf(selection: Selection, payload: KeysPayload | undefined): readonly string[] | undefined {
+  if (selection.kind === 'all') return undefined
+  return rowOf(selection.ref, payload)?.providers ?? []
+}
+
 /** Drop the memo. Used by tests. */
 export function reset(): void {
   catalog = undefined
   inFlight = undefined
-}
-
-/**
- * A free credential name to offer when the reader wants to store a pasted key.
- *
- * Storing under a name that is already taken would silently replace the key the
- * harness uses for its own model calls, so the suggestion walks past every name
- * the catalog already knows.
- * @param payload - the catalog, when one has loaded.
- * @returns a name that is not in use.
- */
-export function suggestRefName(payload: KeysPayload | undefined): string {
-  const taken = new Set((payload?.refs ?? []).map(row => row.ref))
-  for (let index = 2; index < 100; index += 1) {
-    const candidate = `DEEPSEEK_API_KEY_${String(index)}`
-    if (!taken.has(candidate)) return candidate
-  }
-  return 'DEEPSEEK_API_KEY_CUSTOM'
 }

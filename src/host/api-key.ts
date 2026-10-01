@@ -2,24 +2,18 @@
  * The only module that ever holds an API key VALUE.
  *
  * No key is stored by this plugin, and none is written to any file by it: a key
- * is either resolved at call time from DSH's own credential service — the same
- * store the model configuration uses — or handed in by the page for exactly one
- * request. Either way it lives in a local variable for as long as one HTTP
- * request takes. That is why the plugin can be published to GitHub without
- * leaking anything: there is no key in the repository, in its settings, or in
- * any request it serves.
+ * is resolved at call time from DSH's own credential service — the same store
+ * the model configuration uses — and lives in a local variable for as long as
+ * one HTTP request takes. That is why the plugin can be published to GitHub
+ * without leaking anything: there is no key in the repository, in its settings,
+ * or in any request it serves.
  *
- * The rest of this module is deliberately value-free:
- *
- * - `describeApiKey` asks the service "is this configured?" and never receives
- *   the secret, which is what makes the page's key dropdown safe to build;
- * - `rememberApiKey` writes a key the reader typed into DSH's own credential
- *   store (the supported place for it), and reports whether this build can.
+ * The rest of this module is deliberately value-free: `describeApiKey` asks the
+ * service "is this configured?" and never receives the secret, which is what
+ * makes the page's model dropdown safe to build.
  *
  * @module dsh-cost-stats/host/api-key
  */
-
-import type { RememberOutcome } from '../balance.ts'
 
 /** Credential reference (a POSIX-style environment-variable name) to resolve. */
 export const API_KEY_REF = 'DEEPSEEK_API_KEY'
@@ -47,13 +41,6 @@ export interface CredentialsLike {
    * @returns the answer, in whichever shape this build uses.
    */
   describe?(ref: string): Promise<DescribeAnswer> | DescribeAnswer
-  /**
-   * Store a value under a reference.
-   * @param ref - the reference name.
-   * @param value - the secret to store.
-   * @returns nothing.
-   */
-  set?(ref: string, value: string): Promise<void> | void
 }
 
 /** Why the key could not be read. */
@@ -83,24 +70,6 @@ const REF_PATTERN = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/
  */
 export function isApiKeyRef(value: unknown): value is string {
   return typeof value === 'string' && REF_PATTERN.test(value)
-}
-
-/**
- * Whether a string is a usable pasted key.
- *
- * Bounded and whitespace-free: a pasted key with a newline in it, or a
- * megabyte of text, is a mistake worth refusing before it reaches a request
- * header (a header with a CR/LF is rejected by the runtime anyway, but the page
- * should hear "that is not a key" instead of a network error).
- * @param value - candidate.
- * @returns whether it may be used as a bearer token.
- */
-export function isApiKeyValue(value: unknown): value is string {
-  if (typeof value !== 'string') return false
-  const trimmed = value.trim()
-  if (trimmed.length < 8 || trimmed.length > 512) return false
-  // eslint-disable-next-line no-control-regex
-  return !/[\s\u0000-\u001f\u007f]/.test(trimmed)
 }
 
 /**
@@ -212,29 +181,3 @@ export async function describeApiKey(ctx: object, ref: string): Promise<ApiKeySt
   }
 }
 
-/**
- * Store a key in DSH's own credential store.
- *
- * This is the supported way for a key the reader typed to become a named
- * credential: it lands in the same private file the model configuration uses,
- * not in this plugin's files, not in the repository lookups, and not in the
- * page. A build without a writable service reports `'unsupported'` so the page
- * can say where to put the key by hand instead.
- * @param ctx - host context carrying the credential service.
- * @param ref - the name to store the key under.
- * @param value - the key itself.
- * @returns what happened.
- */
-export async function rememberApiKey(ctx: object, ref: string, value: string): Promise<RememberOutcome> {
-  if (!isApiKeyRef(ref) || !isApiKeyValue(value)) return 'failed'
-  const credentials = credentialsOf(ctx)
-  if (credentials === undefined) return 'unsupported'
-  if (typeof credentials.set !== 'function') return 'unsupported'
-  try {
-    await credentials.set(ref, value.trim())
-    return 'saved'
-  } catch {
-    // The message may quote the argument; it is discarded on purpose.
-    return 'failed'
-  }
-}

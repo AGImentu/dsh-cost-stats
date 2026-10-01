@@ -1,10 +1,11 @@
 /**
  * The key catalog route: `GET /cost-stats/keys`.
  *
- * The page's dropdown asks this route "which keys could I query?" and receives
- * names, origins and a configured flag — never a value. The work itself lives in
- * `key-catalog.ts`; this file is only the webserver edge: refuse non-local
- * callers, answer JSON, and never throw into the webserver.
+ * The page's model dropdown asks this route "which models have a credential?"
+ * and receives names, provider ids, display labels and a configured flag —
+ * never a value. The work itself lives in `key-catalog.ts`; this file is only the
+ * webserver edge: refuse non-local callers, answer JSON, and never throw into the
+ * webserver.
  *
  * @module dsh-cost-stats/host/keys-route
  */
@@ -40,7 +41,6 @@ export async function handleKeysRequest(
       ok: false,
       default: API_KEY_REF,
       refs: [],
-      canRemember: false,
       message: '凭据清单仅对本机请求开放',
     })
     return
@@ -55,7 +55,7 @@ export async function handleKeysRequest(
     const message = error instanceof Error ? error.message : String(error)
     const logger = (ctx as { logger?: { warn(message: unknown): void } }).logger
     logger?.warn(`dsh-cost-stats: ${KEYS_ROUTE} failed: ${message}`)
-    respond(200, { ok: false, default: API_KEY_REF, refs: [], canRemember: false, message })
+    respond(200, { ok: false, default: API_KEY_REF, refs: [], message })
   }
 }
 
@@ -74,7 +74,6 @@ export function registerKeysRoute(ctx: HostContextLike): () => void {
           ok: false,
           default: API_KEY_REF,
           refs: [],
-          canRemember: false,
           message,
         }))
       })

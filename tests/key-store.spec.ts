@@ -3,16 +3,15 @@ import * as balanceStore from '../src/client/balance-store.ts'
 import * as keyStore from '../src/client/key-store.ts'
 import type { KeysPayload } from '../src/balance.ts'
 
-/** A catalog with two named keys. */
+/** A catalog with two models, each mapped to the provider ids it pays for. */
 function catalog(): KeysPayload {
   return {
     ok: true,
     default: 'DEEPSEEK_API_KEY',
     refs: [
-      { ref: 'DEEPSEEK_API_KEY', configured: true, origin: 'default' },
-      { ref: 'MIXTOKEN_API_KEY', configured: true, origin: 'store', provider: 'mixtoken' },
+      { ref: 'DEEPSEEK_API_KEY', label: 'DeepSeek', configured: true, origin: 'default', providers: ['deepseek-official'] },
+      { ref: 'MIXTOKEN_API_KEY', label: 'https://api.mixtoken.ai/v1', configured: true, origin: 'store', provider: 'mixtoken', providers: ['mixtoken'] },
     ],
-    canRemember: true,
   }
 }
 
@@ -45,17 +44,26 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-describe('suggestRefName', () => {
-  it('offers a name that is still free', () => {
-    expect(keyStore.suggestRefName(undefined)).toBe('DEEPSEEK_API_KEY_2')
-    const taken: KeysPayload = {
-      ...catalog(),
-      refs: [
-        ...catalog().refs,
-        { ref: 'DEEPSEEK_API_KEY_2', configured: true, origin: 'store' },
-      ],
-    }
-    expect(keyStore.suggestRefName(taken)).toBe('DEEPSEEK_API_KEY_3')
+describe('the catalog cache', () => {
+  it('fetches once per page and joins concurrent callers', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify(catalog()), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    }))
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+    const [first, second] = await Promise.all([keyStore.load(), keyStore.load()])
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(first).toBe(second)
+    expect(String((fetchMock.mock.calls[0] as unknown[])[0])).toBe('/cost-stats/keys')
+    await keyStore.load()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('degrades to an empty catalog instead of rejecting', async () => {
+    globalThis.fetch = vi.fn(async () => { throw new Error('offline') }) as unknown as typeof fetch
+    const payload = await keyStore.load()
+    expect(payload.ok).toBe(false)
+    expect(payload.refs).toEqual([])
   })
 })
 
@@ -85,6 +93,30 @@ describe('the remembered selection', () => {
   })
 })
 
+describe('the model filter', () => {
+  it('filters nothing for 「全部」', () => {
+    expect(keyStore.providerIdsOf({ kind: 'all' }, catalog())).toBeUndefined()
+    expect(keyStore.providerIdsOf({ kind: 'all' }, undefined)).toBeUndefined()
+  })
+
+  it('maps a picked credential to the provider ids its traffic carries', () => {
+    expect(keyStore.providerIdsOf({ kind: 'ref', ref: 'DEEPSEEK_API_KEY' }, catalog())).toEqual(['deepseek-official'])
+    expect(keyStore.providerIdsOf({ kind: 'ref', ref: 'MIXTOKEN_API_KEY' }, catalog())).toEqual(['mixtoken'])
+  })
+
+  it('filters everything out for a credential with no known provider', () => {
+    // An empty set is the honest answer: nothing can be attributed to that key,
+    // so the table shows nothing rather than everything.
+    expect(keyStore.providerIdsOf({ kind: 'ref', ref: 'UNKNOWN_KEY' }, catalog())).toEqual([])
+  })
+
+  it('finds a row by reference, and says so when there is none', () => {
+    expect(keyStore.rowOf('MIXTOKEN_API_KEY', catalog())?.label).toBe('https://api.mixtoken.ai/v1')
+    expect(keyStore.rowOf('UNKNOWN_KEY', catalog())).toBeUndefined()
+    expect(keyStore.rowOf('MIXTOKEN_API_KEY', undefined)).toBeUndefined()
+  })
+})
+
 describe('balance-store', () => {
   /** Install a fetch stub and record every call. */
   function stubFetch(payload: unknown = { ok: true, infos: [] }): ReturnType<typeof vi.fn> {
@@ -98,7 +130,7 @@ describe('balance-store', () => {
 
   it('queries a named credential by NAME, and never puts a key in the page', async () => {
     const mock = stubFetch({ ok: true, at: 1, ref: 'MIXTOKEN_API_KEY', infos: [] })
-    await balanceStore.load({ kind: 'ref', ref: 'MIXTOKEN_API_KEY' })
+    await balanceStore.load('MIXTOKEN_API_KEY')
     const [url, init] = mock.mock.calls[0] as unknown as [string, RequestInit]
     expect(url).toBe('/cost-stats/balance?ref=MIXTOKEN_API_KEY')
     expect(init.method).toBeUndefined()
@@ -108,44 +140,28 @@ describe('balance-store', () => {
   it('caches per name and joins concurrent callers of the same name', async () => {
     const mock = stubFetch({ ok: true, infos: [] })
     await Promise.all([
-      balanceStore.load({ kind: 'ref', ref: 'A_KEY' }),
-      balanceStore.load({ kind: 'ref', ref: 'A_KEY' }),
+      balanceStore.load('A_KEY'),
+      balanceStore.load('A_KEY'),
     ])
     expect(mock).toHaveBeenCalledTimes(1)
-    await balanceStore.load({ kind: 'ref', ref: 'B_KEY' })
+    await balanceStore.load('B_KEY')
     expect(mock).toHaveBeenCalledTimes(2)
-    await balanceStore.load({ kind: 'ref', ref: 'A_KEY' })
+    await balanceStore.load('A_KEY')
     expect(mock).toHaveBeenCalledTimes(2)
-    expect(balanceStore.snapshot({ kind: 'ref', ref: 'A_KEY' })).toBeDefined()
-    expect(balanceStore.snapshot({ kind: 'ref', ref: 'C_KEY' })).toBeUndefined()
-  })
-
-  it('sends a pasted key in the request body, never in the URL, and caches nothing', async () => {
-    const mock = stubFetch({ ok: true, manual: true, infos: [] })
-    const request = { kind: 'manual' as const, key: 'sk-pasted-1234567890', remember: true, rememberAs: 'A_KEY' }
-    await balanceStore.load(request, true)
-    await balanceStore.load(request, true)
-    const [url, init] = mock.mock.calls[0] as unknown as [string, RequestInit]
-    expect(url).toBe('/cost-stats/balance')
-    expect(JSON.parse(String(init.body))).toEqual({
-      key: 'sk-pasted-1234567890',
-      remember: true,
-      rememberAs: 'A_KEY',
-    })
-    // Two clicks, two queries: a one-off secret is never reused from a cache.
-    expect(mock).toHaveBeenCalledTimes(2)
+    expect(balanceStore.snapshot('A_KEY')).toBeDefined()
+    expect(balanceStore.snapshot('C_KEY')).toBeUndefined()
   })
 
   it('forces a refetch when asked, and turns a broken response into a payload', async () => {
     const mock = stubFetch({ ok: true, infos: [] })
-    await balanceStore.load({ kind: 'ref', ref: 'A_KEY' })
-    await balanceStore.load({ kind: 'ref', ref: 'A_KEY' }, true)
+    await balanceStore.load('A_KEY')
+    await balanceStore.load('A_KEY', true)
     const [url] = mock.mock.calls[1] as unknown as [string]
     expect(url).toContain('refresh=1')
     expect(mock).toHaveBeenCalledTimes(2)
 
     globalThis.fetch = vi.fn(async () => { throw new Error('offline') }) as unknown as typeof fetch
-    const payload = await balanceStore.load({ kind: 'ref', ref: 'OFFLINE_KEY' })
+    const payload = await balanceStore.load('OFFLINE_KEY')
     expect(payload.ok).toBe(false)
     expect(payload.reason).toBe('network')
   })

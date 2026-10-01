@@ -43,7 +43,7 @@ export type BalanceFailure =
   /** DeepSeek answered something this plugin cannot read. */
   | 'bad-response'
 
-/** The `GET|POST /cost-stats/balance` payload. */
+/** The `GET /cost-stats/balance` payload. */
 export interface BalancePayload {
   readonly ok: boolean
   /** DeepSeek's `is_available`: whether the balance can still pay for calls. */
@@ -55,28 +55,14 @@ export interface BalancePayload {
    * The credential NAME the numbers belong to (`DEEPSEEK_API_KEY`).
    *
    * A name is not a secret — it is the identifier the reader picked in the
-   * page's dropdown — and it is what lets the chip say whose money this is.
-   * Absent for a key that was typed into the page: that one has no name.
+   * page's dropdown — and it is what lets the readout say whose money this is.
    */
   readonly ref?: string
-  /** `true` when the numbers came from a key typed into the page. */
-  readonly manual?: boolean
-  /** Outcome of a `remember` request, when the caller asked to store the key. */
-  readonly remembered?: RememberOutcome
   /** Present only when `ok` is false. */
   readonly reason?: BalanceFailure
   /** Short human-readable detail; never contains the key. */
   readonly message?: string
 }
-
-/** What happened to a "store this key in DSH's credential store" request. */
-export type RememberOutcome =
-  /** Written; the reference is now resolvable like any configured key. */
-  | 'saved'
-  /** This DSH build's credential service cannot write from a plugin. */
-  | 'unsupported'
-  /** The service refused or threw. */
-  | 'failed'
 
 /** Where a candidate key reference was discovered. */
 export type KeyRefOrigin =
@@ -106,6 +92,16 @@ export interface KeyRefInfo {
   readonly origin: KeyRefOrigin
   /** Provider id from the profile configuration, when one was found. */
   readonly provider?: string
+  /**
+   * The model-provider ids whose traffic this credential pays for.
+   *
+   * This is what the page filters the statistics by: a stored reply records the
+   * provider that served it (`deepseek-official`, `mixtoken`, …), so "show me
+   * what THIS key was used for" is a set membership test against these ids.
+   * Collected from every configuration block declaring the reference, plus a
+   * built-in list for the references the harness itself owns.
+   */
+  readonly providers?: readonly string[]
 }
 
 /** The `GET /cost-stats/keys` payload: what can be picked, never what it is. */
@@ -113,9 +109,9 @@ export interface KeysPayload {
   readonly ok: boolean
   /** The reference used when the reader picks nothing. */
   readonly default: string
+  /** Every credential that can be selected, in display order. */
   readonly refs: readonly KeyRefInfo[]
-  /** Whether this DSH build's credential service can be written from here. */
-  readonly canRemember: boolean
   /** Present only when the catalog could not be built (the default still is). */
   readonly message?: string
 }
+
