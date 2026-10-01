@@ -24,6 +24,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { act } from 'react-dom/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CostStatsSection } from '../src/client/StatsSection.tsx'
+import { CostStatsEntry } from '../src/client/index.tsx'
 import { fallbackTranslator } from '../src/client/locales.ts'
 import * as balanceStore from '../src/client/balance-store.ts'
 import * as keyStore from '../src/client/key-store.ts'
@@ -153,6 +154,25 @@ describe('the statistics page under the real renderer', () => {
     // A throw inside the page is caught by the plugin's boundary and turns the
     // section into nothing; React logs it first, so "no complaints" is the
     // assertion that matters.
+    expect(errors.join('\n')).toBe('')
+
+    await act(async () => { root?.unmount() })
+    root = undefined
+  })
+
+  it('shows readable copy even when the host translator knows nothing', async () => {
+    // The app symptom on a host whose locale lookup finds nothing: the framework
+    // echoes keys, and the page read `stats.title` / `stats.key.query`. The entry
+    // wraps the seat's translator, so mounting the ENTRY (not the inner page) is
+    // what this case has to exercise.
+    await mount(createElement(CostStatsEntry, { t: (key: string) => key } as never))
+    const text = container.textContent ?? ''
+
+    expect(text).toContain('费用统计')
+    expect(text).toContain('查询余额')
+    expect(text).toContain('模型')
+    expect(text).not.toContain('stats.title')
+    expect(text).not.toContain('stats.key.query')
     expect(errors.join('\n')).toBe('')
 
     await act(async () => { root?.unmount() })

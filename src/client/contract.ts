@@ -164,9 +164,15 @@ export interface ClientContextLike {
   /**
    * Read a service from the root reflect store, tolerating its absence.
    * @param name - service name.
+   * @param strict - `false` for cordis's non-throwing form (a miss is
+   * `undefined`, not an exception); omitted, cordis uses its strict default.
    * @returns the service, or undefined.
    */
-  get?(name: string): unknown
+  get?(name: string, strict?: boolean): unknown
+  /** cordis's reflect store, probed when `get` is unavailable or refuses. */
+  readonly reflect?: { get?(name: string, strict?: boolean): unknown }
+  /** Present only on a context that injected the locale service. */
+  readonly locale?: unknown
   /**
    * Subscribe to a framework event, tolerating a host that does not emit it.
    * @param event - event name.

@@ -20,11 +20,12 @@
 
 import type { ReactNode } from 'react'
 import type {
-  ClientContextLike, CostChipProps, CostStatsProps, LocaleServiceLike,
+  ClientContextLike, CostChipProps, CostStatsProps,
 } from './contract.ts'
 import { CostChipBoundary } from './Boundary.tsx'
 import { CostChip } from './CostChip.tsx'
 import { CostStatsSection } from './StatsSection.tsx'
+import { activeLocaleOf, localeOf, withFallback } from './locale-service.ts'
 import { en, fallbackTranslator, NS, zh } from './locales.ts'
 import { installStyles } from './styles.ts'
 
@@ -40,13 +41,16 @@ const STATS_ORDER = 300
 
 /**
  * The registered chip entry: the chip behind a containment boundary.
+ *
+ * Exported for the render tests, which mount the entry (not the inner component)
+ * so the translator wrapping below is covered too.
  * @param props - the slot owner plus the framework standard seats.
  * @returns the contained chip.
  */
-function CostChipEntry(props: CostChipProps): ReactNode {
+export function CostChipEntry(props: CostChipProps): ReactNode {
   return (
     <CostChipBoundary>
-      <CostChip {...props} />
+      <CostChip {...props} t={withFallback(props.t)} />
     </CostChipBoundary>
   )
 }
@@ -54,13 +58,16 @@ function CostChipEntry(props: CostChipProps): ReactNode {
 /**
  * The registered settings page, contained the same way: a page that throws
  * should show nothing instead of replacing the settings content column.
+ *
+ * The seat's translator is wrapped so a host whose locale service cannot answer
+ * this namespace still shows Chinese instead of raw keys (`withFallback`).
  * @param props - the session-list standard seat and the locale seat.
  * @returns the contained statistics page.
  */
-function CostStatsEntry(props: CostStatsProps): ReactNode {
+export function CostStatsEntry(props: CostStatsProps): ReactNode {
   return (
     <CostChipBoundary>
-      <CostStatsSection {...props} />
+      <CostStatsSection {...props} t={withFallback(props.t)} />
     </CostChipBoundary>
   )
 }
@@ -84,18 +91,31 @@ function navLabelFor(active: string | undefined): string {
 export function apply(ctx: ClientContextLike): void {
   ctx.effect(() => installStyles(), 'dsh-cost-stats: styles')
 
-  // Read the locale service through the root reflect store: the dictionaries are
-  // an enhancement, so a host without the service still renders both entries
-  // (with the built-in Chinese fallback) instead of leaving them pending.
-  const locale = ctx.get?.('locale') as LocaleServiceLike | undefined
+  // Read the locale service through cordis's NON-STRICT lookup: this plugin does
+  // not (and must not) declare `locale` in `inject`, because a host without that
+  // provider would then never mount the plugin at all. The dictionaries are an
+  // enhancement — and `withFallback` (used by both entries below) keeps the UI
+  // readable even when this lookup finds nothing, which is exactly what a strict
+  // lookup did to the settings page: it answered nothing, the framework's
+  // translator echoed the keys, and the page read `stats.title` on screen.
+  const locale = localeOf(ctx)
   if (locale !== undefined) {
-    ctx.effect(() => locale.register(NS, { zh, en }), 'dsh-cost-stats: dictionaries')
+    ctx.effect(() => {
+      try {
+        return locale.register(NS, { zh, en })
+      } catch (error) {
+        // A failed registration is not worth losing the page over: the bundled
+        // dictionary still answers every key through `withFallback`.
+        console.warn('dsh-cost-stats: registering dictionaries failed', error)
+        return undefined
+      }
+    }, 'dsh-cost-stats: dictionaries')
   }
 
   // The settings shell owns the nav cell and reads the label from this
   // registrant's thunk on every render, so tracking the active locale is enough:
   // no re-registration and no locale subscription of the plugin's own.
-  let activeLocale = locale?.getSnapshot?.().active
+  let activeLocale = activeLocaleOf(locale)
   ctx.on?.('locale/change', (snapshot: { active?: string } | undefined) => {
     activeLocale = snapshot?.active ?? activeLocale
   })

@@ -2,6 +2,29 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 与语义化版本。
 
+## [0.9.3] - 2026-10-01
+
+### 修复:整页文案变成 `stats.title` 这种原始 key
+
+- **现象**:重启 App 后,导航项「费用统计」正常(那是我自带的字典渲染的),但页面正文全是
+  `stats.title` / `stats.key.query` / `stats.balance.retry` 这种**原始 key**。
+- **根因**:框架的翻译函数在**不认识这个命名空间**时会把 key 原样返回 —— 也就是说**我发布的字典没注册上**。
+  注册代码里用的是 `ctx.get('locale')`,这是 cordis 的**严格取法**:对一个**没有写进 `inject` 的服务**,
+  它在 0.2.0 上answer "没有"(在别的 build 上直接抛)。这跟 0.8.0 那次 `ctx.credentials` 是**同一个坑**,
+  只不过上次踩在宿主侧,这次踩在浏览器侧(而这个插件故意不把 `locale` 写进 `inject`:没有该 provider 的宿主
+  应当照常挂载,少一层翻译而已)。
+- **修法(两头都堵)**:
+  1. **非严格取法**:新增 `src/client/locale-service.ts` 的 `localeOf(ctx)`,依次尝试
+     `ctx.get('locale', false)` → `ctx.reflect.get('locale', false)` → 属性 `ctx.locale`,全部带 try/catch;
+     注册本身也包了 try/catch(注册失败不该把整页带走)。
+  2. **兜底翻译**:新增 `withFallback(t)` —— 当框架的翻译函数**把 key 原样还回来**(或返回空)时,
+     改用插件自带的字典。两个入口(胶囊与统计页)都套了这一层,所以**即使字典永远注册不上,
+     页面也只会显示中文,不可能再出现 `stats.xxx`**。翻译函数抛错不被吞掉(仍交给错误边界)。
+- **测试 146 → 158**:`tests/locale-service.spec.ts` 覆盖 non-strict 取法(并断言**从不调用严格形式**)、
+  `reflect` 与属性两种后备、恶意 context 不抛错、`withFallback` 对"回显 key / 空串 / 真翻译 / 自己不认识的 key"
+  的行为;`tests/render-dom.spec.tsx` 新增一例:把**入口组件**套上一个"只会回显 key"的翻译函数,
+  整页仍必须显示中文;冒烟脚本也新增两条:字典必须经**非严格取法**注册成功、回显翻译函数下页面不得出现原始 key。
+
 ## [0.9.2] - 2026-10-01
 
 ### 交互:那一行按「模型」的说法来(用户反馈)

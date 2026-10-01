@@ -290,6 +290,29 @@ check('stats page targets settings.section',
 const label = typeof statsEntry?.options.label === 'function' ? statsEntry.options.label() : statsEntry?.options.label
 check(`stats nav label is registrant copy (got "${label}")`, typeof label === 'string' && label.length > 0)
 
+// 3b. Dictionary registration. The locale service must be reached with cordis's
+// NON-STRICT lookup: a strict one answers nothing for a service this plugin does
+// not inject, and the page then renders raw keys (`stats.title`) because the
+// framework's translator echoes what it cannot translate.
+const registeredDictionaries = []
+const localeContext = {
+  effect: (callback) => { callback() },
+  get: (name, strict) => (name === 'locale' && strict === false
+    ? {
+      register: (ns, dictionaries) => { registeredDictionaries.push({ ns, dictionaries }); return () => {} },
+      getSnapshot: () => ({ active: 'zh-CN' }),
+    }
+    : undefined),
+  on: () => {},
+  slots: { inject: (_key, contribute) => { contribute() }, register: () => () => {} },
+}
+moduleExports.apply(localeContext)
+check(`dictionaries registered through the non-strict locale lookup (got ${registeredDictionaries.length})`,
+  registeredDictionaries.length === 1 && registeredDictionaries[0].ns === 'cost-stats')
+check('both dictionaries are published',
+  typeof registeredDictionaries[0]?.dictionaries?.zh === 'object'
+  && typeof registeredDictionaries[0]?.dictionaries?.en === 'object')
+
 // 4. Containment.
 let chipContained = 'escaped'
 try {
@@ -389,6 +412,16 @@ check('the fallback chip is labelled as recomputed, not as the official total',
 
 const otherSession = renderTree(chipEntry.component({ ...withheldProps, sessionId: 's9' }))
 check('the fallback never borrows another session\'s reply', otherSession === null)
+
+// 7b. A host translator that does not know this namespace echoes the key (that
+// is what a missing/unreachable dictionary registration produces). The entries
+// wrap the seat's translator, so the page must still read Chinese.
+const echoTree = renderTree(statsEntry.component({ t: (key) => key }))
+const echoText = collectText(echoTree).join(' ')
+check(`an echoing host translator still renders Chinese (got "${echoText.slice(0, 60)}")`,
+  echoText.includes('费用统计') && echoText.includes('查询余额') && echoText.includes('模型'))
+check('no raw locale key reaches the page through the echoing translator',
+  !/stats\.[a-z]/i.test(echoText) && !/cost\.[a-z]/i.test(echoText))
 
 // 8. The balance number itself, now that the stores have settled: a reopen
 // starts from the store's snapshot, so the page shows money instead of a

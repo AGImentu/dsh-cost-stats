@@ -291,9 +291,9 @@ node scripts/verify-balance.mjs 2026-09-11T11:07 2026-09-11T12:20
 ```sh
 pnpm install
 pnpm run typecheck   # tsc --noEmit
-pnpm test            # 142 项:计费/时段/别名规则 + 日志折叠(含压缩、分叉继承段、会话格式 v4) + 日历 + 统计与分页 + 兜底缓存 + 余额解析/凭据读取与 describe、写入 + key 清单解析与合并 + 按 key 名的缓存隔离 + 本机守卫 + **真 React + jsdom 整页渲染**
+pnpm test            # 158 项:计费/时段/别名规则 + 日志折叠(含压缩、分叉继承段、会话格式 v4) + 日历 + 统计与分页 + 兜底缓存 + 余额解析/凭据读取与 describe、写入 + key 清单解析与合并 + 按 key 名的缓存隔离 + 本机守卫 + locale 取法与翻译兜底 + **真 React + jsdom 整页渲染**
 pnpm run build       # lib/index.js(host 半边:路由 + 日志折叠) + lib/client.js(浏览器半边)
-pnpm run smoke       # 产物契约冒烟:在 Node 里跑 client.js,验证注册 id / 插件形状 / 两个插槽 / 真实算价 / 抛错隔离 / 宿主请求 / 保留 prop(ref)警察
+pnpm run smoke       # 产物契约冒烟:在 Node 里跑 client.js,验证注册 id / 插件形状 / 两个插槽 / 字典注册 / 真实算价 / 抛错隔离 / 宿主请求 / 保留 prop(ref)警察
 pnpm run verify      # typecheck + test + build + smoke
 pnpm run verify:balance   # 独立复算全部会话累计 ← 与 API 余额对账用
 pnpm run verify:paths     # 两种折叠入口(有头部 / 无头部+切点)逐条比对 ← 防止「离线验证通过、真机重复计费」
@@ -327,11 +327,12 @@ src/
   client/
     index.tsx             浏览器半边:注入样式、注册字典、注册两个插槽条目(胶囊 + 统计页)
     CostChip.tsx          费用胶囊 + 明细面板(portal + 定位 + Esc/外部点击关闭)
-    StatsSection.tsx      设置页「费用统计」:标题 + 余额胶囊 + KEY 行、合计卡片、逐条计费项明细表(回复 / 压缩,单一列表 + 分页)
-    BalanceChip.tsx       标题右侧的余额胶囊(数字 / 查询中 / 未配置 / 失败四种状态 + 悬停明细与来源 key)
-    KeyPicker.tsx         KEY 行:凭据下拉 + 「查询KEY余额」按钮 + 手动输入(密码框)与「存入 DSH 凭据库」
-    balance-store.ts      余额的共享缓存(**按 key 名分开**、15 秒有效期、并发合并;手动粘贴的 key 不缓存)
-    key-store.ts          key 清单的缓存 + 已选名字(只记**名字**,存 localStorage;手动 key 从不进这里)
+    StatsSection.tsx      设置页「费用统计」:标题 + 余额胶囊 + 模型行、合计卡片、逐条计费项明细表(回复 / 压缩,单一列表 + 分页)
+    BalanceChip.tsx       标题右侧的余额胶囊(数字 / 查询中 / 未配置 / 失败四种状态 + 悬停明细与来源模型)
+    KeyPicker.tsx         模型行:供应商下拉(显示「设置 → 模型」里的名字)+ 「查询余额」按钮 + 手动输入(密码框)与「存入 DSH 凭据库」
+    locale-service.ts     locale 服务的**非严格取法** + 翻译兜底(框架回显 key 时改用自带字典,避免页面显示 `stats.xxx`)
+    balance-store.ts      余额的共享缓存(**按凭据名分开**、15 秒有效期、并发合并;手动粘贴的 key 不缓存)
+    key-store.ts          模型清单的缓存 + 已选凭据名(只记**名字**,存 localStorage;手动 key 从不进这里)
     Pickers.tsx           两个日历选择器(选日期 / 选月份)+ 共享的锚定浮层
     calendar.ts           纯日历数学:周一为首的 6×7 网格、跨年月份平移、月份键解析
     stats-model.ts        统计模型(纯函数):日/月键 + 合计(回复/压缩分开计数)+ 分页切片

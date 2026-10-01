@@ -256,6 +256,17 @@
 第 6–9 处会先由 `tsc` 报错(镜像类型),再在真机上表现为统计页报错或行数变少 —— 用 `pnpm run verify:balance` 可直接定位到折叠层;
 第 11 处(凭据服务)失效时,余额胶囊会显示"未配置 API key",统计页其余部分照常工作。
 
+14. **浏览器侧的 locale 服务(0.9.3 踩过)**:字典靠 `ctx.get('locale')` 取服务后 `register(NS, {zh, en})` 发布。
+    但**严格取法**对没写进 `inject` 的服务答"没有" —— 第 11 条那个 cordis 坑的浏览器版。
+    后果非常"安静":字典没注册上,框架的翻译函数就把 **key 原样返回**,设置页于是显示
+    `stats.title` / `stats.key.query`(而导航项正常,因为它走的是插件自带的字典 thunk)。
+    两条纪律:① 取服务一律用 `ctx.get(name, false)`(或 `ctx.reflect.get`),注册本身也要 try/catch;
+    ② 插件**不能假定**字典一定注册成功 —— `withFallback(t)` 把"翻译结果 === key"当作一次 miss,
+    回退到自带字典,于是最坏情况是"语言不对",而不是"满屏标识符"。
+    `locale` 仍然不写进 `inject`:没有该 provider 的宿主应当照常挂载。
+    回归测试:`tests/locale-service.spec.ts`(取法与兜底)、`tests/render-dom.spec.tsx`(用"只回显 key"的
+    翻译函数渲染入口组件,整页仍须是中文)、冒烟脚本(字典必须经非严格取法注册成功;回显翻译函数下不得出现原始 key)。
+
 10. **会话格式 v4(0.1.7-rc.2 复核新增)**:0.1.7 引入 `session-format-v3-to-v4`
     (工具结果提升为工具角色、重命名生产者来源、补齐中断回合、追加父目录事实)。
     复核结论:插件**不需要改折算逻辑**——宿主路由走 `sessionPersistence`(与格式无关),
@@ -303,7 +314,8 @@
 | 余额与凭据 | `vitest`(`tests/balance.spec.ts`、`tests/api-key.spec.ts`) | 金额字符串解析与非法条目丢弃、`is_available: false` 传递、币种齐全、仅本机守卫(回环各种写法 / 外部 peer / 外部 Host / 未知形态)、凭据缺失与抛错的降级、**key 只出现在 Authorization 头且失败信息里不含 key**、缓存与 `?refresh=1`、刷新失败时保留上次好数据、非本机请求 403 且不调用凭据服务、**按名字取值 / 按名字隔离缓存(换 key 不串数字)/ 非法名字与非法值的提前拒绝 / POST 请求体解析(含坏 JSON)/ 手动 key 不缓存与不回显 / `describe` 三种形态与缺成员·抛错 / `set` 的 saved·unsupported·failed** |
 | key 清单 | `vitest`(`tests/key-catalog.spec.ts`) | 只读 `refs:` 段的名字 / 段结束即停 / 引号与注释 / 无 `refs:` 段的平面形态 / `apiKeyEnv` 与供应商识别 / 被共用的名字去重 / 非名字的值被忽略 / 合并规则(默认第一、来源优先、供应商补全、无 `describe` 时按文本证据、非法名字丢弃)/ 载荷里没有 `sk-` |
 | key 选择与缓存 | `vitest`(`tests/key-store.spec.ts`) | 建议名跳过已占用 / 只记**名字**(存储里不出现 `sk-` 形状)/ 存储不可用时抛错仍安全 / 按名字查询且 URL 只带名字 / 同名字合并并发、不同名字各自缓存 / 手动 key 走请求体且两次点击发两次请求 / `refresh=1` / 网络失败降级为载荷 |
-| **真 React 渲染** | `vitest` + **jsdom**(`tests/render-dom.spec.tsx`) | 用真 React 18 + 真 DOM 把设置页整页渲染出来:文字与下拉选项都在(=**没有被错误边界兜掉**)、下拉的选中值确实是那把 key、`console.error` **一次都没被调用**。补住"迷你渲染器不实现元素语义"的盲区:0.9.1 的保留 prop 事故就是它抓出来的(见 §5 第 13 条) |
+| **真 React 渲染** | `vitest` + **jsdom**(`tests/render-dom.spec.tsx`) | 用真 React 18 + 真 DOM 把设置页整页渲染出来:文字与下拉选项都在(=**没有被错误边界兜掉**)、下拉的选中值确实是那把 key、下拉文本是模型名而非凭据名、**用"只回显 key"的翻译函数渲染入口组件时整页仍是中文**、`console.error` **一次都没被调用**。补住"迷你渲染器不实现元素语义"的盲区:0.9.1 的保留 prop 事故就是它抓出来的(见 §5 第 13 条) |
+| **locale 取法与兜底** | `vitest`(`tests/locale-service.spec.ts`) | 只用 `ctx.get(name, false)` 取服务并断言**从不调用严格形式** / `ctx.reflect.get` 与属性两种后备 / 恶意 context 不抛错 / 活动语言取不到时安静降级 / `withFallback` 对"回显 key""空串""真翻译""自己不认识的 key"的行为 / 翻译函数抛错不被吞掉(仍交给边界) |
 | 独立复算 | `node scripts/verify-balance.mjs` | 绕过宿主直读日志复算全部会话累计,并与 API 余额的差值对账(2026-09-11 实测 Δ$0.249 vs 余额 Δ$0.25) |
 | **双入口一致性** | `node scripts/verify-fold-paths.mjs` | 对每份真实日志(**所有代际**:v3 与 0.1.7 起的 v4 并存)用两种输入各折一遍(有头部→自行找接缝;无头部+`inheritedEventCount`→路由形态)并逐条比对。0.7.1 曾只在第一种形态下正确,页面仍重复计费;这道门就是为那类「离线通过、真机不一致」而加的 |
 | **格式升级对账** | `node scripts/verify-fold-paths.mjs` + 一次性探针 | 0.7.3 适配 0.1.7 时,对同一会话的 v3/v4 两份真实日志逐回合比对:共同回合**全部一致**,v4 只是多了升级后的新回合 —— 这才是「格式升级没有改变历史数字」的证据,而不是口头保证 |
