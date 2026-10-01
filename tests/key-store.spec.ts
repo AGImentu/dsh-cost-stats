@@ -115,6 +115,30 @@ describe('the model filter', () => {
     expect(keyStore.rowOf('UNKNOWN_KEY', catalog())).toBeUndefined()
     expect(keyStore.rowOf('MIXTOKEN_API_KEY', undefined)).toBeUndefined()
   })
+
+  it('maps each provider id to the name the model settings page shows', () => {
+    const labels = keyStore.labelByProvider(catalog())
+    expect(labels.get('deepseek-official')).toBe('DeepSeek')
+    expect(labels.get('mixtoken')).toBe('https://api.mixtoken.ai/v1')
+    // A provider from another profile has no catalog row: the page falls back to
+    // its raw id, which is why an absent entry must stay absent.
+    expect(labels.has('qwen38')).toBe(false)
+    expect(keyStore.labelByProvider(undefined).size).toBe(0)
+  })
+
+  it('labels a provider shared by two credentials only once', () => {
+    const shared: KeysPayload = {
+      ok: true,
+      default: 'A_KEY',
+      refs: [
+        { ref: 'A_KEY', label: 'First', configured: true, origin: 'default', providers: ['p1'] },
+        { ref: 'B_KEY', label: 'Second', configured: true, origin: 'config', providers: ['p1', 'p2'] },
+      ],
+    }
+    const labels = keyStore.labelByProvider(shared)
+    expect(labels.get('p1')).toBe('First')
+    expect(labels.get('p2')).toBe('Second')
+  })
 })
 
 describe('balance-store', () => {

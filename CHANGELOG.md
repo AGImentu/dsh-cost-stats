@@ -2,6 +2,28 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 与语义化版本。
 
+## [0.13.0] - 2026-10-01
+
+### 明细表新增一列「模型」(在「用量」左侧)
+
+- **每行标明它属于哪个模型**,写的名字与上方那个下拉**完全一致**(`DeepSeek 账号` / `DeepSeek` /
+  你自己配的 provider 的 `displayName`,例如那个中转站就显示它的 URL)。这样选「全部」时,
+  一眼就能看出哪几笔是哪个模型花的 —— 之前只有筛选功能,行里看不出归属。
+- 映射是纯函数 `labelByProvider(catalog)`(provider id → 显示名,先到先得),
+  取自同一份清单,所以下拉与表格**不可能口径不一致**。
+- 清单里**没有**的 provider(例如别的 profile 里配过的 `qwen38`)回退显示它的 provider id,
+  不会留空;工具提示里始终保留 `provider · model` 两个原始 id,便于对账。
+- 列宽有上限并省略号处理:一个把 `displayName` 写成超长 URL 的中转站不会把表格撑变形。
+- 这是**纯前端**改动:清单里本来就有名字,所以**刷新页面**即可生效(不必重启)。
+
+### 测试(172 项)
+
+- `tests/key-store.spec.ts`:`labelByProvider` 的映射、缺失 provider 保持缺失(页面才会回退到 id)、
+  两个凭据共用同一 provider 时只落一个名字。
+- `tests/render-dom.spec.tsx`:表头**五列**且顺序为 `时间/会话/模型/用量/费用`;
+  三行分别渲染出 `DeepSeek` / `https://api.mixtoken.ai/v1` / `DeepSeek 账号`;
+  每格的 `title` 是 `provider · model`。
+
 ## [0.12.0] - 2026-10-01
 
 ### 「DeepSeek 账号」现在也能查余额了(走 DSH 自己的账号服务)

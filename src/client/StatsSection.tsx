@@ -175,6 +175,8 @@ export function CostStatsSection({ t }: CostStatsProps): ReactNode {
     // pretending the money went somewhere it did not.
     return inRange.filter(row => row.provider !== undefined && providerIds.includes(row.provider))
   }, [rows, day, month, providerIds])
+  /** The provider-id → display-name map the 模型 column reads. */
+  const labels = useMemo(() => keyStore.labelByProvider(catalog), [catalog])
   const totals = useMemo(() => totalsOf(selected), [selected])
   // A selection change or a reload can leave the stored page out of range; the
   // clamp happens inside `paginate`, so no effect and no extra frame is involved.
@@ -305,13 +307,20 @@ export function CostStatsSection({ t }: CostStatsProps): ReactNode {
               <tr>
                 <th>{tr('stats.col.time')}</th>
                 <th>{tr('stats.col.session')}</th>
+                <th>{tr('stats.col.model')}</th>
                 <th>{tr('stats.col.tokens')}</th>
                 <th>{tr('stats.col.cost')}</th>
               </tr>
             </thead>
             <tbody>
               {visible.map(row => (
-                <ReplyRow key={`${row.sessionId}:${String(row.turn)}`} row={row} tr={tr} now={now} />
+                <ReplyRow
+                  key={`${row.sessionId}:${String(row.turn)}`}
+                  row={row}
+                  tr={tr}
+                  now={now}
+                  labels={labels}
+                />
               ))}
             </tbody>
           </table>
@@ -345,22 +354,38 @@ export function CostStatsSection({ t }: CostStatsProps): ReactNode {
 }
 
 /**
- * One row of the list: stamp, session name with tags, tokens, money.
+ * One row of the list: stamp, session name with tags, model, tokens, money.
  *
  * A compaction row is not a reply: it has no turn number, carries the
  * 「压缩」badge, and its tooltip says so too. Money keeps both currencies on one
- * line (the column is the narrowest of the four, and a stacked second line was
+ * line (the column is the narrowest of the five, and a stacked second line was
  * what made every row look tall and top-heavy), and the USD half stays muted so
  * the CNY figure reads first.
- * @param props - the priced row, translator, and the reference instant.
+ * @param props - the priced row, translator, the provider labels and the instant.
  * @returns the table row.
  */
-function ReplyRow({ row, tr, now }: { row: TurnCostRow, tr: Translator, now: number }): ReactNode {
+function ReplyRow({ row, tr, now, labels }: {
+  row: TurnCostRow
+  tr: Translator
+  now: number
+  labels: ReadonlyMap<string, string>
+}): ReactNode {
   const isCompaction = row.compaction === true
   const suffix = row.model === undefined ? '' : ` · ${row.model}`
   const label = isCompaction
     ? `${row.sessionTitle} · ${tr('stats.tag.compaction')}${suffix}`
     : `${row.sessionTitle} · #${String(row.turn)}${suffix}`
+  /**
+   * Which model this row belongs to, under the same names the dropdown uses.
+   *
+   * Falls back to the provider id (a provider from another profile has no catalog
+   * row), and the tooltip always carries the raw pair so the exact ids stay
+   * reachable.
+   */
+  const modelName = row.provider === undefined
+    ? (row.model ?? '—')
+    : (labels.get(row.provider) ?? row.provider)
+  const modelHint = [row.provider, row.model].filter(part => part !== undefined && part !== '').join(' · ')
   return (
     <tr>
       <td>{formatStamp(row.at, now)}</td>
@@ -370,6 +395,7 @@ function ReplyRow({ row, tr, now }: { row: TurnCostRow, tr: Translator, now: num
         {row.subagent && <span className={CLASS.badge}>{tr('stats.tag.subagent')}</span>}
         {!row.priced && <span className={CLASS.badge}>{tr('stats.tag.unpriced')}</span>}
       </td>
+      <td className={CLASS.model} title={modelHint === '' ? undefined : modelHint}>{modelName}</td>
       <td>{formatTokens(row.tokens)}</td>
       <td className={CLASS.moneyCell}>
         {row.priced ? formatMoney(row.cny, 'CNY') : '—'}

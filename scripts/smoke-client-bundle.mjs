@@ -179,6 +179,8 @@ const foldRow = {
   sessionTitle: 'folded session',
   subagent: false,
   turn: 7,
+  // A fixed instant and not `Date.now()`: the fallback price depends on the
+  // peak/off-peak window, and this check asserts the off-peak figure.
   at: Date.UTC(2026, 8, 14, 5, 0, 0),
   provider: 'deepseek-official',
   model: 'deepseek-flash',

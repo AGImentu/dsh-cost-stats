@@ -114,6 +114,30 @@ export function rowOf(ref: string, payload: KeysPayload | undefined): KeyRefInfo
 }
 
 /**
+ * Model-provider id → the name the model settings page uses for it.
+ *
+ * Every stored reply records the provider that served it, so this map is what
+ * lets the table's 模型 column say `DeepSeek 账号` or a relay's own name instead
+ * of the raw id — and, under 「全部」, say which model each row belongs to. A
+ * provider that appears in the logs but has no catalog entry (a model configured
+ * in another profile, say) is simply absent, and the page falls back to its id.
+ * @param payload - the catalog.
+ * @returns the label per provider id.
+ */
+export function labelByProvider(payload: KeysPayload | undefined): ReadonlyMap<string, string> {
+  const labels = new Map<string, string>()
+  for (const row of payload?.refs ?? []) {
+    const label = row.label ?? row.ref
+    for (const provider of row.providers ?? []) {
+      // First writer wins: the harness entries come first in the catalog, and two
+      // credentials sharing one provider id are indistinguishable anyway.
+      if (!labels.has(provider)) labels.set(provider, label)
+    }
+  }
+  return labels
+}
+
+/**
  * The model-provider ids the picked credential pays for.
  *
  * This is the page's filter: a stored reply names the provider that served it, so

@@ -67,6 +67,7 @@ export const CLASS = {
   metric: 'dsh-cost-stats__metric',
   table: 'dsh-cost-stats__table',
   session: 'dsh-cost-stats__session',
+  model: 'dsh-cost-stats__model',
   moneyCell: 'dsh-cost-stats__moneyCell',
   moneyInline: 'dsh-cost-stats__moneyInline',
   pager: 'dsh-cost-stats__pager',
@@ -681,6 +682,16 @@ export const STYLES = `
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--dsw-alias-label-primary);
+}
+
+/* Model column: which model the row belongs to, under the dropdown's own name.
+   Truncated rather than wrapped — a relay whose display name is a long URL would
+   otherwise stretch the whole table. */
+.${CLASS.model} {
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Money column: CNY first, USD beside it, never a second line. */

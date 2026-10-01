@@ -221,6 +221,16 @@ describe('the statistics page under the real renderer', () => {
       .toEqual(['__all__', 'deepseek-account', 'DEEPSEEK_API_KEY', 'MIXTOKEN_API_KEY'])
     expect(container.querySelectorAll('tbody tr')).toHaveLength(3)
 
+    // The 模型 column names each row's model the way the dropdown does, so
+    // 「全部」 still says who spent what.
+    expect([...container.querySelectorAll('thead th')].map(th => th.textContent))
+      .toEqual(['时间', '会话', '模型', '用量', '费用'])
+    expect([...container.querySelectorAll('tbody tr td:nth-child(3)')].map(td => td.textContent))
+      .toEqual(['DeepSeek', 'https://api.mixtoken.ai/v1', 'DeepSeek 账号'])
+    // …and the raw ids stay reachable in the tooltip.
+    expect([...container.querySelectorAll('tbody tr td:nth-child(3)')].map(td => td.getAttribute('title')))
+      .toEqual(['deepseek-official · deepseek-flash', 'mixtoken · deepseek-v4.1-flash', 'deepseek-account · deepseek-flash'])
+
     // The page must not ask for a balance on its own: only the button does that.
     expect(urls().some(url => url.includes('/cost-stats/balance'))).toBe(false)
     expect(container.textContent).toContain('未查询')
