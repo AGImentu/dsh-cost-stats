@@ -137,14 +137,12 @@ export function CostStatsSection({ t }: CostStatsProps): ReactNode {
    * Query the balance of the model on screen.
    *
    * With no model picked the harness default answers — that is the key DSH itself
-   * uses for DeepSeek, and the one a reader asking "how much is left?" means. A
-   * model with no key (DSH's login account) is never asked: the button is
-   * disabled and this guard keeps even a stray call from sending a request.
+   * uses for DeepSeek, and the one a reader asking "how much is left?" means. The
+   * login account is queried the same way; the host knows to read it through
+   * DSH's own account service, because that account has no API key at all.
    * Nothing happens without this click.
    */
   const queryBalance = useCallback((): void => {
-    const picked = ref === undefined ? undefined : keyStore.rowOf(ref, catalog)
-    if (picked?.noKey === true) return
     const target = ref ?? catalog?.default
     if (target === undefined) return
     setBalanceLoading(true)

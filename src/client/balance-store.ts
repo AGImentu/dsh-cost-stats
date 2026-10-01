@@ -15,6 +15,7 @@
  */
 
 import { BALANCE_ROUTE } from '../routes.ts'
+import { ACCOUNT_CHOICE_ID } from '../balance.ts'
 import type { BalancePayload } from '../balance.ts'
 
 /** How long a page-local answer is reused, in ms (matches the host's own TTL). */
@@ -52,7 +53,9 @@ export function snapshot(ref: string): BalancePayload | undefined {
 
 /**
  * Query one credential's balance, joining concurrent callers.
- * @param ref - the credential name the host should resolve.
+ * @param ref - the model id the host should answer for: a credential NAME, or
+ * `ACCOUNT_CHOICE_ID` for DSH's login account (which the host reads through the
+ * harness's own account service, because that account has no API key).
  * @param force - bypass both the client cache and the host cache.
  * @param now - clock, injectable for tests.
  * @returns the payload (never rejects: a failure is a payload with `ok: false`).
@@ -65,8 +68,11 @@ export function load(ref: string, force = false, now: () => number = Date.now): 
   const joined = pending.get(ref)
   if (joined !== undefined) return joined
   const started = now()
+  const query = ref === ACCOUNT_CHOICE_ID
+    ? `account=1${force ? '&refresh=1' : ''}`
+    : `ref=${encodeURIComponent(ref)}${force ? '&refresh=1' : ''}`
   const result = fetch(
-    `${BALANCE_ROUTE}?ref=${encodeURIComponent(ref)}${force ? '&refresh=1' : ''}`,
+    `${BALANCE_ROUTE}?${query}`,
     { credentials: 'same-origin', headers: { accept: 'application/json' } },
   )
     .then(async (response) => await response.json() as BalancePayload)

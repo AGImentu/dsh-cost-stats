@@ -18,6 +18,8 @@
 import { BALANCE_URL, isLocalRequest, parseBalance } from './balance.ts'
 import { API_KEY_REF, isApiKeyRef, readApiKey } from './api-key.ts'
 import { BALANCE_ROUTE } from '../routes.ts'
+import { readAccountBalance } from './account-balance.ts'
+import { ACCOUNT_CHOICE_ID } from '../balance.ts'
 import type { BalancePayload } from '../balance.ts'
 import type { HostContextLike, ServerRequestLike, ServerResponseLike } from './contract.ts'
 
@@ -27,10 +29,10 @@ export const BALANCE_TTL_MS = 15_000
 /** How long to wait for DeepSeek before giving up, in ms. */
 const TIMEOUT_MS = 8_000
 
-/** One successful answer per credential name. */
+/** One successful answer per model (credential name, or the login account). */
 let cached = new Map<string, { readonly at: number, readonly payload: BalancePayload }>()
 
-/** The last successful answer per name: served while a refresh fails. */
+/** The last successful answer per model: served while a refresh fails. */
 let lastGood = new Map<string, BalancePayload>()
 
 /** Reset the module's memo. Used by tests and by the route's own force path. */
@@ -46,6 +48,8 @@ export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>
 export interface BalanceQuery {
   /** Credential name to resolve from DSH's store. */
   readonly ref?: string
+  /** Ask for the LOGIN ACCOUNT's balance instead of a key's. */
+  readonly account?: boolean
   /** Ignore the cache (a deliberate click on the page's query button). */
   readonly force?: boolean
 }
@@ -69,17 +73,36 @@ function failure(reason: BalancePayload['reason'], message: string): BalancePayl
 }
 
 /**
- * Query DeepSeek for the balance of one key.
+ * Query DeepSeek for the balance of one key, or ask DSH for the login account's.
  *
  * The key is read here and handed straight to `fetch`; it is never stored in a
- * module-level variable, which is why the caches can only ever hold numbers.
+ * module-level variable, which is why the caches can only ever hold numbers. The
+ * account branch never touches a credential at all: DSH's own account service
+ * answers, because the login account has no API key.
  * @param deps - context, fetch, clock and TTL.
- * @param query - which key to use, and whether to force a refetch.
+ * @param query - which model to ask about, and whether to force a refetch.
  * @returns the payload to serve.
  */
 export async function readBalance(deps: BalanceDeps, query: BalanceQuery = {}): Promise<BalancePayload> {
   const now = deps.now ?? Date.now
   const ttl = deps.ttlMs ?? BALANCE_TTL_MS
+
+  if (query.account === true) {
+    const cacheKey = ACCOUNT_CHOICE_ID
+    if (query.force !== true) {
+      const hit = cached.get(cacheKey)
+      if (hit !== undefined && now() - hit.at < ttl) return hit.payload
+    }
+    const payload = await readAccountBalance(deps.ctx, now)
+    if (payload.ok) {
+      cached.set(cacheKey, { at: payload.at ?? now(), payload })
+      lastGood.set(cacheKey, payload)
+    } else {
+      const previous = lastGood.get(cacheKey)
+      if (previous !== undefined) return previous
+    }
+    return payload
+  }
 
   const ref = query.ref ?? API_KEY_REF
   if (!isApiKeyRef(ref)) {
@@ -180,6 +203,9 @@ export async function handleBalanceRequest(
   const url = new URL(req.url ?? BALANCE_ROUTE, 'http://localhost')
   const refParam = url.searchParams.get('ref')
   const payload = await readBalance({ ctx, ...deps }, {
+    // `?account=1` reads DSH's own account service; `?ref=<NAME>` resolves a
+    // credential. The page sends exactly one of them.
+    ...(url.searchParams.get('account') === '1' ? { account: true } : {}),
     ...(refParam === null || refParam === '' ? {} : { ref: refParam }),
     force: url.searchParams.get('refresh') === '1',
   })

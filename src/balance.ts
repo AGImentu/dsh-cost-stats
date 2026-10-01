@@ -42,6 +42,22 @@ export type BalanceFailure =
   | 'unauthorized'
   /** DeepSeek answered something this plugin cannot read. */
   | 'bad-response'
+  /**
+   * The login account's balance could not be read: DSH's account service is not
+   * mounted, the reader is signed out, or it answered a status this plugin does
+   * not understand. Only the account query produces this.
+   */
+  | 'account-unavailable'
+
+/**
+ * The dropdown id that means "DSH's login account".
+ *
+ * It is also the model-provider id the stored replies carry for that route, which
+ * is why one string serves both purposes. It is deliberately NOT a valid
+ * credential reference (the pattern rejects dashes), so it can never be mistaken
+ * for an API key by the balance route.
+ */
+export const ACCOUNT_CHOICE_ID = 'deepseek-account'
 
 /** The `GET /cost-stats/balance` payload. */
 export interface BalancePayload {
@@ -52,12 +68,15 @@ export interface BalancePayload {
   /** Epoch ms of the successful query. */
   readonly at?: number
   /**
-   * The credential NAME the numbers belong to (`DEEPSEEK_API_KEY`).
+   * The credential NAME the numbers belong to (`DEEPSEEK_API_KEY`), or
+   * `ACCOUNT_CHOICE_ID` when they came from the login account.
    *
    * A name is not a secret — it is the identifier the reader picked in the
    * page's dropdown — and it is what lets the readout say whose money this is.
    */
   readonly ref?: string
+  /** `true` when these numbers came from the login account, not from a key. */
+  readonly account?: boolean
   /** Present only when `ok` is false. */
   readonly reason?: BalanceFailure
   /** Short human-readable detail; never contains the key. */
@@ -111,15 +130,16 @@ export interface KeyRefInfo {
    */
   readonly providers?: readonly string[]
   /**
-   * `true` when this model has NO API key, so no balance can be asked for.
+   * `true` when this entry is DSH's LOGIN ACCOUNT rather than an API key.
    *
-   * `deepseek-account` is DSH's login account: its credential is a login token,
-   * not an API key — measured against the official endpoint, a token like that
-   * answers `401 Authentication Fails, Your api key … is invalid`. Such an entry
-   * is still listed (the table can be filtered to it), but the page says why the
-   * balance is unavailable instead of pretending the key is merely missing.
+   * Its credential is a login token, not a key — measured: that token answers
+   * `401 Authentication Fails, Your api key … is invalid` on the official
+   * `/user/balance` endpoint. Its balance is reachable a different way: DSH's own
+   * `deepseekAccount` host service, which the balance route uses for exactly this
+   * entry (see `host/account-balance.ts`). The page therefore treats it as a
+   * queryable model like any other, while saying where the numbers come from.
    */
-  readonly noKey?: true
+  readonly account?: true
 }
 
 /** The `GET /cost-stats/keys` payload: what can be picked, never what it is. */

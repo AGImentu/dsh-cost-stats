@@ -48,16 +48,17 @@ const MAX_CONFIG_FILES = 8
  * - **DeepSeek 账号** (`deepseek-account`) is DSH's LOGIN account. It has no API
  *   key at all: its credential is a login token, and a token like that answers
  *   `401 Authentication Fails, Your api key … is invalid` on the official balance
- *   endpoint (measured). It is listed so the table can be filtered to its usage,
- *   with `noKey` telling the page why no balance can be asked for.
+ *   endpoint (measured). Its balance therefore comes from DSH's own account
+ *   service instead (`host/account-balance.ts`), and `account` tells the page to
+ *   ask the route that way.
  */
 const HARNESS_MODELS: readonly {
   readonly ref: string
   readonly label: string
   readonly providers: readonly string[]
-  readonly noKey?: true
+  readonly account?: true
 }[] = [
-  { ref: 'deepseek-account', label: 'DeepSeek 账号', providers: ['deepseek-account'], noKey: true },
+  { ref: 'deepseek-account', label: 'DeepSeek 账号', providers: ['deepseek-account'], account: true },
   { ref: 'DEEPSEEK_API_KEY', label: 'DeepSeek', providers: ['deepseek-official'] },
 ]
 
@@ -67,7 +68,7 @@ const HARNESS_MODELS: readonly {
  * @returns the built-in entry, or undefined.
  */
 function harnessModelFor(ref: string) {
-  return HARNESS_MODELS.find(model => model.ref === ref && model.noKey !== true)
+  return HARNESS_MODELS.find(model => model.ref === ref && model.account !== true)
 }
 
 /**
@@ -264,20 +265,21 @@ export function buildCatalog(input: CatalogInput): KeyRefInfo[] {
     })
   }
   /** A harness model that owns no credential: listed for filtering only. */
-  const addKeyless = (model: (typeof HARNESS_MODELS)[number]): void => {
+  /** The login account: no API key behind it, but its balance is readable. */
+  const addAccount = (model: (typeof HARNESS_MODELS)[number]): void => {
     if (rows.some(row => row.ref === model.ref)) return
     rows.push({
       ref: model.ref,
       label: model.label,
-      // Nothing can resolve: there is no credential behind this model at all.
+      // Nothing resolves through the credential service: there is no key here.
       configured: false,
       origin: 'harness',
       providers: model.providers,
-      noKey: true,
+      account: true,
     })
   }
 
-  for (const model of HARNESS_MODELS) if (model.noKey === true) addKeyless(model)
+  for (const model of HARNESS_MODELS) if (model.account === true) addAccount(model)
   add(input.defaultRef, 'default')
   for (const ref of input.storeRefs) add(ref, 'store')
   for (const entry of input.configRefs) add(entry.ref, 'config', entry.provider, entry.label)

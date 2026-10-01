@@ -60,8 +60,9 @@ function clockOf(at: number): string {
 function optionLabel(row: KeysPayload['refs'][number], tr: Translator): string {
   const head = row.label ?? row.ref
   // 「未配置」 would be wrong for the login account: it is not an unset key, it is
+  // 「未配置」 would be wrong for the login account: it is not an unset key, it is
   // a model that has no key by design.
-  if (row.noKey === true || row.configured) return head
+  if (row.account === true || row.configured) return head
   return `${head}${tr('stats.key.unconfigured')}`
 }
 
@@ -77,7 +78,7 @@ function optionHint(row: KeysPayload['refs'][number], tr: Translator): string {
   parts.push(providers.length === 0
     ? tr('stats.key.optionNoProvider')
     : tr('stats.key.optionProviders', { providers: providers.join(', ') }))
-  if (row.noKey === true) parts.push(tr('stats.key.noKeyHint'))
+  if (row.account === true) parts.push(tr('stats.key.accountHint'))
   else parts.push(row.configured ? tr('stats.key.optionSet') : tr('stats.key.optionUnset'))
   return parts.join('\n')
 }
@@ -104,26 +105,16 @@ export interface KeyPickerProps {
  * The balance readout: numbers when there are numbers, and a readable reason when
  * there are none. It is a `<span>`, not a button — the query button sits to its
  * left and is the only thing that fires a request.
- * @param props - the payload, the flags and the translator.
+ * @param props - the payload, the loading flag and the translator.
  * @returns the readout.
  */
 function BalanceText(props: {
   payload: BalancePayload | undefined
   loading: boolean
-  keyless: boolean
   tr: Translator
 }): ReactNode {
-  const { payload, loading, keyless, tr } = props
+  const { payload, loading, tr } = props
   const hint = tr('stats.balance.hint')
-  // A model with no key at all (DSH's login account) is neither "unset" nor a
-  // failure: say what it is, and where its balance actually lives.
-  if (keyless) {
-    return (
-      <span className={CLASS.keyBalance} data-tone="warn" title={tr('stats.key.noKeyHint')}>
-        {tr('stats.key.noKey')}
-      </span>
-    )
-  }
   if (loading) return <span className={CLASS.keyBalance} data-tone="warn">{tr('stats.balance.loading')}</span>
   if (payload === undefined) {
     return <span className={CLASS.keyBalance} data-tone="warn">{tr('stats.balance.notQueried')}</span>
@@ -132,11 +123,13 @@ function BalanceText(props: {
   if (!payload.ok) {
     const label = payload.reason === 'no-key' || payload.reason === 'credentials-unavailable'
       ? tr('stats.balance.noKey')
-      : payload.reason === 'forbidden'
-        ? tr('stats.balance.localOnly')
-        : payload.reason === 'bad-request'
-          ? tr('stats.balance.badKey')
-          : tr('stats.balance.retry')
+      : payload.reason === 'account-unavailable'
+        ? tr('stats.balance.accountUnavailable')
+        : payload.reason === 'forbidden'
+          ? tr('stats.balance.localOnly')
+          : payload.reason === 'bad-request'
+            ? tr('stats.balance.badKey')
+            : tr('stats.balance.retry')
     return (
       <span className={CLASS.keyBalance} data-tone="warn" title={[payload.message, hint].filter(Boolean).join('\n')}>
         {label}
@@ -176,8 +169,8 @@ export function KeyPicker(props: KeyPickerProps): ReactNode {
   const rows = catalog?.refs ?? []
   /** The picked model: `undefined` for 「全部」, which stands for no model at all. */
   const picked = selectedRef === undefined ? undefined : rows.find(row => row.ref === selectedRef)
-  /** DSH's login account: listed, filterable, and impossible to ask a balance for. */
-  const keyless = picked?.noKey === true
+  /** DSH's login account: no API key, but DSH's own account service has its balance. */
+  const account = picked?.account === true
 
   return (
     <div className={CLASS.keyRow}>
@@ -204,15 +197,15 @@ export function KeyPicker(props: KeyPickerProps): ReactNode {
         type="button"
         className={CLASS.keyQuery}
         onClick={onQuery}
-        // Nothing to ask: this model has no key (the readout says so, and the
-        // tooltip explains where its balance actually lives).
-        disabled={loading || keyless}
-        title={keyless ? tr('stats.key.noKeyHint') : undefined}
+        disabled={loading}
+        // The account's balance comes from DSH itself, not from an API key; the
+        // tooltip says so, because a reader may wonder where it comes from.
+        title={account ? tr('stats.key.accountHint') : undefined}
       >
         {tr('stats.key.query')}
       </button>
 
-      <BalanceText payload={balance} loading={loading} keyless={keyless} tr={tr} />
+      <BalanceText payload={balance} loading={loading} tr={tr} />
     </div>
   )
 }

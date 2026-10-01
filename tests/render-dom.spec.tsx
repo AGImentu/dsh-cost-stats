@@ -32,7 +32,7 @@ const keysPayload: KeysPayload = {
   default: 'DEEPSEEK_API_KEY',
   refs: [
     // DSH's login account: no key at all, listed so its usage can be filtered to.
-    { ref: 'deepseek-account', label: 'DeepSeek 账号', configured: false, origin: 'harness', providers: ['deepseek-account'], noKey: true },
+    { ref: 'deepseek-account', label: 'DeepSeek 账号', configured: false, origin: 'harness', providers: ['deepseek-account'], account: true },
     { ref: 'DEEPSEEK_API_KEY', label: 'DeepSeek', configured: true, origin: 'default', providers: ['deepseek-official'] },
     { ref: 'MIXTOKEN_API_KEY', label: 'https://api.mixtoken.ai/v1', configured: true, origin: 'store', provider: 'mixtoken', providers: ['mixtoken'] },
   ],
@@ -111,6 +111,15 @@ const balancePayload = {
   at: 1_700_000_000_000,
   ref: 'DEEPSEEK_API_KEY',
 }
+/** What the account route answers for the login account. */
+const accountPayload = {
+  ok: true,
+  available: true,
+  infos: [{ currency: 'CNY', total: 1.85, granted: 0.37, toppedUp: 1.48 }],
+  at: 1_700_000_000_000,
+  account: true,
+  ref: 'deepseek-account',
+}
 
 /** React's act() environment flag, set for the whole file. */
 declare global {
@@ -138,9 +147,11 @@ beforeEach(() => {
     const url = String(input)
     const body = url.includes('/cost-stats/keys')
       ? keysPayload
-      : url.includes('/cost-stats/balance')
-        ? balancePayload
-        : usagePayload
+      : url.includes('account=1')
+        ? accountPayload
+        : url.includes('/cost-stats/balance')
+          ? balancePayload
+          : usagePayload
     return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
   })
   globalThis.fetch = fetchMock as unknown as typeof fetch
@@ -270,26 +281,33 @@ describe('the statistics page under the real renderer', () => {
     root = undefined
   })
 
-  it('lists the login account, and says why its balance cannot be asked for', async () => {
+  it('lists the login account, filters to it, and reads its balance through DSH', async () => {
     await mount(createElement(CostStatsEntry, { t: undefined }))
     const select = container.querySelector('select') as HTMLSelectElement
 
     await act(async () => { pickOption(select, 'deepseek-account') })
     await act(async () => { await new Promise(resolve => { setTimeout(resolve, 10) }) })
 
-    // The account is a filter like any other…
+    // The account is a filter like any other: only its own replies remain.
     const rows = [...container.querySelectorAll('tbody tr')].map(row => row.textContent ?? '')
     expect(rows).toHaveLength(1)
     expect(rows[0]).toContain('account session')
-    // …but it is not an unset key: the readout says what it is, the button is
-    // disabled, and pressing it anyway sends nothing.
-    expect(container.textContent).toContain('账号登录,没有 API key')
-    expect(container.textContent).not.toContain('未查询')
+    // It has no API key, so nothing is asked for on selection…
+    expect(urls().some(url => url.includes('account=1'))).toBe(false)
+    expect(container.textContent).toContain('未查询')
+
+    // …and the click goes to the ACCOUNT route, which DSH answers itself.
     const button = queryButton()
-    expect(button.disabled).toBe(true)
+    expect(button.disabled).toBe(false)
     await act(async () => { button.click() })
-    await act(async () => { await new Promise(resolve => { setTimeout(resolve, 20) }) })
-    expect(urls().some(url => url.includes('/cost-stats/balance'))).toBe(false)
+    await act(async () => { await new Promise(resolve => { setTimeout(resolve, 30) }) })
+
+    expect(urls().some(url => url.includes('/cost-stats/balance?account=1'))).toBe(true)
+    expect(container.textContent).toContain('余额 ¥1.85')
+    // The two lines the account page shows are both in the tooltip.
+    const titles = [...container.querySelectorAll('span')].map(span => span.getAttribute('title') ?? '').join('\n')
+    expect(titles).toContain('充值 ¥1.48')
+    expect(titles).toContain('赠金 ¥0.37')
     expect(errors.join('\n')).toBe('')
 
     await act(async () => { root?.unmount() })

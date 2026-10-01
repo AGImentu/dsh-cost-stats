@@ -209,7 +209,7 @@ const keysPayload = {
   ok: true,
   default: 'DEEPSEEK_API_KEY',
   refs: [
-    { ref: 'deepseek-account', label: 'DeepSeek 账号', configured: false, origin: 'harness', providers: ['deepseek-account'], noKey: true },
+    { ref: 'deepseek-account', label: 'DeepSeek 账号', configured: false, origin: 'harness', providers: ['deepseek-account'], account: true },
     { ref: 'DEEPSEEK_API_KEY', label: 'DeepSeek', configured: true, origin: 'default', providers: ['deepseek-official'] },
     { ref: 'MIXTOKEN_API_KEY', label: 'https://api.mixtoken.ai/v1', configured: true, origin: 'store', provider: 'mixtoken', providers: ['mixtoken'] },
   ],

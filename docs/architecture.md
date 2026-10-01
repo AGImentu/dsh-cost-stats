@@ -286,10 +286,30 @@
       并显式排除 `version`/`records`/`kind`/`payload`/`id`/`secret`/`token`/`issuer` 这些结构键。
     - 供应商声明:各 profile 的 `cordis.patch.yml` 里 `providers.<id>.apiKeyEnv: <名字>`;
       供应商 id 由"向上找最近的、缩进更浅的裸键行"得到(不是 `displayName`,它常被写成 URL)。
-    - 路由三个:`GET /cost-stats/usage`、`GET /cost-stats/keys`、`GET|POST /cost-stats/balance`
-      (`packages/host/webserver` 的 `register({kind,path,handler})`);POST 请求体用 Node
-      `IncomingMessage` 的异步迭代读取,上限 16 KB。
-    - 失效时的表现:清单为空 → 下拉只剩「手动输入 key…」(功能不消失);`describe`/`set` 缺失 → 见第 11 条。
+    - 路由三个:`GET /cost-stats/usage`、`GET /cost-stats/keys`、`GET /cost-stats/balance`
+      (`packages/host/webserver` 的 `register({kind,path,handler})`)。0.10.0 起余额路由**只接受 GET**:
+      页面无法提交 key,所以没有请求体可读,也就没有"把密钥塞进请求"的路径。
+    - 失效时的表现:清单为空 → 下拉只剩「全部」+ 手动配置的 provider(功能不消失);`describe` 缺失 → 见第 11 条。
+
+15. **登录账号的余额(0.12.0 新增,走 DSH 自己的账号服务)**:官方 `/user/balance` 只认 API key,
+    而「DeepSeek 账号」是**登录账号**,凭据是登录令牌(存在凭据库 `deepseek-account-platform/default`
+    的 `payload.token`),实测拿它问官方接口得到 `401 Authentication Fails, Your api key … is invalid`。
+    它的余额由 DSH 的宿主服务 **`ctx.deepseekAccount`** 提供(与「设置 → 账号与余额」同一来源):
+
+    ```
+    getBalance({ version, locale, timezoneOffsetSeconds })
+      -> { status: 'ready', value: [{currency,balance}], bonusWallets: [{currency,balance}] }
+    ```
+
+    `value` 是充值余额、`bonusWallets` 是赠金余额(两项相加即那一页显示的口径)。
+    **这两个事实(服务名与调用形状)是实测出来的**,不是读源码得到的 —— 打包后的 app 里源码不可读,
+    于是用一次性探针插件在临时实例上做:① 逐个试候选服务名,发现 `deepseekAccount`;
+    ② 打印它的原型方法名,找到 `getState/getProfile/getBalance`;
+    ③ 用一个"记录字段访问"的 Proxy 当参数,从报错里反推出它要 `{version, locale, timezoneOffsetSeconds}`。
+    用法上仍是第 11 条那套**三路非严格取法**,并且**完全不碰凭据服务**(有测试钉住 `resolve` 未被调用)。
+    `status !== 'ready'`(例如未登录)时,把状态原文带进可读原因;服务不存在时同样降级为一句人话。
+    这是本插件唯一一处依赖 DSH **未文档化**的内部服务:它被完整镜像 + 全程可选,
+    DSH 若改动它,表现为"账号余额读不到",其余功能不受影响。
 
 13. **浏览器侧的保留 prop(0.9.1 踩过,务必记住)**:React 会把 `ref` 从 props 里摘走,函数组件**根本收不到**;
     传**字符串** ref 时 React 18 在 `coerceRef` 里直接抛:
@@ -316,6 +336,7 @@
 | key 选择与缓存 | `vitest`(`tests/key-store.spec.ts`) | 建议名跳过已占用 / 只记**名字**(存储里不出现 `sk-` 形状)/ 存储不可用时抛错仍安全 / 按名字查询且 URL 只带名字 / 同名字合并并发、不同名字各自缓存 / 手动 key 走请求体且两次点击发两次请求 / `refresh=1` / 网络失败降级为载荷 |
 | **真 React 渲染** | `vitest` + **jsdom**(`tests/render-dom.spec.tsx`) | 用真 React 18 + 真 DOM 把设置页整页渲染出来:文字与下拉选项都在(=**没有被错误边界兜掉**)、下拉的选中值确实是那把 key、下拉文本是模型名而非凭据名、**用"只回显 key"的翻译函数渲染入口组件时整页仍是中文**、`console.error` **一次都没被调用**。补住"迷你渲染器不实现元素语义"的盲区:0.9.1 的保留 prop 事故就是它抓出来的(见 §5 第 13 条) |
 | **locale 取法与兜底** | `vitest`(`tests/locale-service.spec.ts`) | 只用 `ctx.get(name, false)` 取服务并断言**从不调用严格形式** / `ctx.reflect.get` 与属性两种后备 / 恶意 context 不抛错 / 活动语言取不到时安静降级 / `withFallback` 对"回显 key""空串""真翻译""自己不认识的 key"的行为 / 翻译函数抛错不被吞掉(仍交给边界) |
+| **账号余额** | `vitest`(`tests/account-balance.spec.ts`) | 只用非严格取法拿 `ctx.deepseekAccount`(并断言传了 `false`)、reflect/属性后备、恶意 context 不抛错;`{status:'ready', value, bonusWallets}` 的映射(充值 + 赠金 = 总额、多币种、只有赠金、坏行丢弃);非 ready 状态把原文带进可读原因;不可读答案;请求形状(`version/locale/timezoneOffsetSeconds`);抛错消息**单行且有上限**;路由 `?account=1` **不调用凭据服务**;失败时保留上次好数据 |
 | 独立复算 | `node scripts/verify-balance.mjs` | 绕过宿主直读日志复算全部会话累计,并与 API 余额的差值对账(2026-09-11 实测 Δ$0.249 vs 余额 Δ$0.25) |
 | **双入口一致性** | `node scripts/verify-fold-paths.mjs` | 对每份真实日志(**所有代际**:v3 与 0.1.7 起的 v4 并存)用两种输入各折一遍(有头部→自行找接缝;无头部+`inheritedEventCount`→路由形态)并逐条比对。0.7.1 曾只在第一种形态下正确,页面仍重复计费;这道门就是为那类「离线通过、真机不一致」而加的 |
 | **格式升级对账** | `node scripts/verify-fold-paths.mjs` + 一次性探针 | 0.7.3 适配 0.1.7 时,对同一会话的 v3/v4 两份真实日志逐回合比对:共同回合**全部一致**,v4 只是多了升级后的新回合 —— 这才是「格式升级没有改变历史数字」的证据,而不是口头保证 |

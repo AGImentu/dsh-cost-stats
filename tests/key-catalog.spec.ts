@@ -160,7 +160,7 @@ describe('buildCatalog', () => {
       label: 'DeepSeek 账号',
       origin: 'harness',
       configured: false,
-      noKey: true,
+      account: true,
       providers: ['deepseek-account'],
     })
     expect(catalog('set')[1]).toMatchObject({ ref: 'DEEPSEEK_API_KEY', origin: 'default', configured: true })
@@ -258,7 +258,7 @@ describe('buildCatalog', () => {
       envHas: () => false,
       state: () => 'set',
     })
-    const account = rows.find(row => row.noKey === true)
+    const account = rows.find(row => row.account === true)
     expect(account?.ref).toBe('deepseek-account')
     expect(isApiKeyRef(String(account?.ref))).toBe(false)
   })

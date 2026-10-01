@@ -2,6 +2,51 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 与语义化版本。
 
+## [0.12.0] - 2026-10-01
+
+### 「DeepSeek 账号」现在也能查余额了(走 DSH 自己的账号服务)
+
+上一版把账号列进下拉,但余额查不了 —— 因为它的凭据是**登录令牌**,不是 API key
+(实测:拿它问官方 `/user/balance` 得到 `401 Authentication Fails, Your api key … is invalid`)。这一版找到并接上了**正道**:
+
+```
+ctx.deepseekAccount.getBalance({ version, locale, timezoneOffsetSeconds })
+  -> { status: 'ready',
+       value:        [{ currency, balance }],   // 充值余额
+       bonusWallets: [{ currency, balance }] }  // 赠金余额
+```
+
+这正是「设置 → 账号与余额」那一页显示的两个数。于是:
+
+- **下拉里选中「DeepSeek 账号」→ 点「查询余额」**,读数显示它自己的余额(CNY),
+  悬停里同时给出「充值 … / 赠金 …」两项,与那一页口径一致;
+- 服务是**可选**的:`ctx.deepseekAccount` 不存在、未登录、或返回了插件看不懂的状态时,
+  都变成一句可读的话(`账号余额读不到` / 带上状态原文),而不是报错 —— 失败时保留上一次的好数据;
+- **全程不碰任何 key**:账号分支不查询凭据服务(有测试钉住 `resolve` 没被调用)。
+
+### 实现要点
+
+- 新增 `src/host/account-balance.ts`:服务镜像 + `{status, value, bonusWallets}` → 插件余额形状的映射
+  (`toppedUp` = 充值、`granted` = 赠金、`total` = 两者之和,多币种各算一行)。
+  取服务仍是与 `credentialsOf` 同一套**三路非严格取法**(`ctx.get(name, false)` → `ctx.reflect.get` → 属性),
+  因为这个插件不 `inject` 它:没有账号服务的宿主应当照常挂载。
+- 路由新增 `?account=1`(页面在选中账号那条时走这个),缓存与"上次好数据"按 `account` 独立一格;
+  凭据分支完全不变。
+- 清单字段 `noKey` → `account`(语义从"没有 key、查不了"变成"是登录账号、余额走 DSH")。
+- 发现过程:宿主服务名与调用姿势是**实测**出来的(临时实例里写一次性探针插件:先列出候选服务,
+  再用"记录字段访问"的 Proxy 问出参数形状),细节见 `docs/architecture.md` §5 第 15 条。
+
+### 测试(170 项)
+
+- 新增 `tests/account-balance.spec.ts`(13 项):非严格取法(并断言只用 `false`)、reflect/属性后备、
+  恶意 context 不抛错、`{status:'ready'}` 的映射(多币种、只有赠金、坏行丢弃)、非 ready 状态带上原文、
+  不可读答案、请求形状(`version/locale/timezoneOffsetSeconds`)、抛错时消息是**单行且有上限**、
+  路由 `?account=1` 不调用凭据服务、失败时保留上次好数据。
+- 真 DOM:选中账号 → 表格只剩它那一行 → 点按钮发出 `?account=1` → 显示 `余额 ¥1.85`,
+  且悬停里同时有「充值 ¥1.48」「赠金 ¥0.37」。
+- 真机(临时 DSH 实例):`/cost-stats/keys` 带 `account: true`;`/cost-stats/balance?account=1`
+  返回该账号的 CNY 余额;API key 那条仍是 USD。
+
 ## [0.11.0] - 2026-10-01
 
 ### 下拉里补上 harness 自带的模型(含「DeepSeek 账号」登录那条)
