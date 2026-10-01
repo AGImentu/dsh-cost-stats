@@ -21,6 +21,8 @@
  * @module dsh-cost-stats/pricing
  */
 
+import { isOffPeakAllDay } from './holidays.ts'
+
 /** Currencies the official tables are published in. */
 export type Currency = 'CNY' | 'USD'
 
@@ -160,6 +162,24 @@ const BEIJING_CLOCK = new Intl.DateTimeFormat('en-US', {
   hourCycle: 'h23',
 })
 
+/** Beijing-time date formatter, for the statutory-holiday calendar. */
+const BEIJING_DATE = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Shanghai',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+})
+
+/**
+ * The Beijing calendar date of an instant (`YYYY-MM-DD`).
+ * @param atMs - epoch ms.
+ * @returns the date in Beijing time.
+ */
+export function beijingDate(atMs: number): string {
+  // en-CA formats as YYYY-MM-DD, which is exactly the key the calendar uses.
+  return BEIJING_DATE.format(new Date(atMs))
+}
+
 /**
  * Read the Beijing wall clock of an instant, independent of the host timezone.
  * @param atMs - epoch ms.
@@ -182,13 +202,20 @@ export function beijingClock(atMs: number): BeijingClock {
 const PEAK_WINDOWS: readonly (readonly [number, number])[] = [[9, 12], [14, 18]]
 
 /**
- * Classify an instant as peak or off-peak under the published windows.
- * Weekends are entirely off-peak; window ends are excluded (12:00 is off-peak).
+ * Classify an instant as peak or off-peak under the published rules.
+ *
+ * Off-peak, in DeepSeek's own words, covers weekends (including weekends worked
+ * as make-up days) and **Chinese statutory holidays all day**; on other days the
+ * peak windows are 09:00-12:00 and 14:00-18:00 Beijing time, with the end of a
+ * window excluded (12:00 is off-peak). The holiday calendar lives in
+ * `holidays.ts` — 0.13.0 priced a holiday weekday at peak rates, which doubled
+ * the estimate for every such turn.
  * @param atMs - epoch ms.
  * @returns whether peak rates apply.
  */
 export function isPeak(atMs: number): boolean {
   if (!Number.isFinite(atMs)) return false
+  if (isOffPeakAllDay(beijingDate(atMs))) return false
   const { weekday, hour, minute } = beijingClock(atMs)
   if (weekday === 'Sat' || weekday === 'Sun') return false
   const minutes = hour * 60 + minute

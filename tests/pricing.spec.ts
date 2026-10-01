@@ -57,6 +57,41 @@ describe('isPeak', () => {
     expect(isPeak(saturday)).toBe(false)
   })
 
+  it('treats a statutory holiday as off-peak ALL DAY, weekday and window or not', () => {
+    // 2026-10-01 (National Day) is a Thursday: 15:44 Beijing would be peak on a
+    // normal Thursday. DeepSeek's rule — 「中国法定节假日全天均按空闲时段计费」 — makes
+    // it off-peak, and 0.13.0 got this wrong by a factor of two.
+    const holidayAfternoon = Date.UTC(2026, 9, 1, 15 - 8, 44, 0)
+    expect(isPeak(holidayAfternoon)).toBe(false)
+    // Mid-morning inside the first window, same day.
+    expect(isPeak(Date.UTC(2026, 9, 1, 10 - 8, 30, 0))).toBe(false)
+    // Every day of the range, including the weekend inside it.
+    for (const day of [2, 3, 4, 5, 6, 7]) {
+      expect(isPeak(Date.UTC(2026, 9, day, 15 - 8, 0, 0))).toBe(false)
+    }
+  })
+
+  it('is back to peak rates the working day after a holiday range', () => {
+    // 2026-10-08 is the first working day after National Day.
+    expect(isPeak(Date.UTC(2026, 9, 8, 15 - 8, 44, 0))).toBe(true)
+    // …and the make-up workday on Saturday 10-10 stays off-peak (DeepSeek bills
+    // adjusted weekend workdays at the off-peak rate too).
+    expect(isPeak(Date.UTC(2026, 9, 10, 15 - 8, 44, 0))).toBe(false)
+  })
+
+  it('covers every 2026 holiday range on a weekday', () => {
+    // One weekday inside each range, at an hour that is peak on ordinary days.
+    const weekdaysInsideHolidays = [
+      Date.UTC(2026, 0, 1, 10 - 8, 0, 0),  // 元旦, Thursday
+      Date.UTC(2026, 1, 17, 10 - 8, 0, 0), // 春节, Tuesday
+      Date.UTC(2026, 3, 6, 10 - 8, 0, 0),  // 清明, Monday
+      Date.UTC(2026, 4, 1, 10 - 8, 0, 0),  // 劳动节, Friday
+      Date.UTC(2026, 5, 19, 10 - 8, 0, 0), // 端午, Friday
+      Date.UTC(2026, 8, 25, 10 - 8, 0, 0), // 中秋, Friday
+    ]
+    for (const instant of weekdaysInsideHolidays) expect(isPeak(instant)).toBe(false)
+  })
+
   it('is independent of the host timezone', () => {
     const instant = beijing(10)
     expect(isPeak(instant)).toBe(true)
