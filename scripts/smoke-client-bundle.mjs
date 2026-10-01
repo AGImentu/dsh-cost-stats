@@ -123,6 +123,35 @@ function collectProp(node, key) {
   return [...own, ...collectProp(node.props?.children, key)]
 }
 
+/**
+ * Every `ref` prop in a stub tree, as `[type, value]` pairs.
+ *
+ * React reserves that prop name, and this miniature renderer does NOT model it —
+ * which is exactly how 0.9.0 shipped a `<KeyPicker ref={name}>`: a function
+ * component never receives `ref`, and a STRING ref makes React throw
+ * ("Element ref was specified as a string ... but no owner was set"). The error
+ * boundary then caught it and the settings page rendered blank in the app while
+ * every check here stayed green. So the checks below police the prop directly.
+ * @param node - the stub element tree.
+ * @param out - accumulator.
+ * @returns the `[type, refValue]` pairs found.
+ */
+function collectRefs(node, out = []) {
+  if (node === null || typeof node !== 'object') return out
+  if (Array.isArray(node)) {
+    for (const child of node) collectRefs(child, out)
+    return out
+  }
+  if ('ref' in (node.props ?? {})) out.push([node.type, node.props.ref])
+  collectRefs(node.props?.children, out)
+  return out
+}
+
+/** Whether an element type is one React can legally hand a ref to. */
+function canHoldRef(type) {
+  return typeof type !== 'function' || type.prototype?.isReactComponent !== undefined
+}
+
 /** One reply row for the host-fold fallback, priced off-peak Flash: ¥5. */
 const foldRow = {
   sessionId: 's1',
@@ -397,6 +426,19 @@ check('the chip says which key the money belongs to',
   collectProp(reopenedTree, 'title').some(title => String(title).includes('来源:DEEPSEEK_API_KEY')))
 check('the page never renders a credential-shaped string',
   !/sk-[A-Za-z0-9_-]{8,}/.test(reopened) && !/sk-[A-Za-z0-9_-]{8,}/.test(JSON.stringify(requests)))
+
+// 8c. Reserved-prop police (see `collectRefs`): a string ref throws in React and
+// a ref on a function component never arrives — both blank the page in the app
+// while this miniature renderer stays happy.
+const refs = [...collectRefs(reopenedTree), ...collectRefs(renderTree(chipEntry.component({
+  messageId: 'm1',
+  useChat: (selector) => selector(snapshotOf(pricedNode)),
+  t: undefined,
+})))]
+check(`no element is handed a string ref (got ${JSON.stringify(refs.map(([, value]) => value).filter(value => typeof value === 'string'))})`,
+  refs.every(([, value]) => typeof value !== 'string'))
+check(`no function component is handed a ref (got ${JSON.stringify(refs.filter(([type]) => !canHoldRef(type)).map(([type]) => type?.name ?? 'anonymous'))})`,
+  refs.every(([type]) => canHoldRef(type)))
 
 if (failures.length > 0) {
   console.error(`smoke: ${failures.length} check(s) failed`)

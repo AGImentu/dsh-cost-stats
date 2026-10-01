@@ -2,6 +2,34 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 与语义化版本。
 
+## [0.9.1] - 2026-09-30
+
+### 修复:打开「费用统计」整块空白(0.9.0 引入)
+
+- **现象**:设置里导航项还在(说明插件加载并注册成功),但右侧内容列**完全空白** —— 正是被插件自己的
+  错误边界(`Boundary.tsx`)接住之后的形态。
+- **根因(我写的错)**:0.9.0 把选中项当成普通 prop 传给了 `KeyPicker`:
+  ```tsx
+  <KeyPicker … ref={targetRef} />        // targetRef 是字符串,例如 "DEEPSEEK_API_KEY"
+  ```
+  `ref` 是 React 的**保留 prop**:它不会出现在被调组件的 props 里,而传**字符串** ref 时 React 直接抛错。
+  用真 React 18 复现出来的是原话:
+  ```
+  Error: Function components cannot have string refs. We recommend using useRef() instead.
+      at coerceRef (react-dom.development.js)
+  ```
+  渲染抛错 → 边界兜底 → 内容列空白。**修法**:改名为普通 prop `selectedRef`(插件自己组件的 prop 名
+  永远不要用 `ref`)。
+- **为什么自测没抓到**:产物冒烟用的是自己写的**迷你渲染器**,它实现 hooks 却**不实现元素语义**
+  (没有 ref、没有重渲染、没有 `act`),所以这一整类问题在 `pnpm run smoke` 里是盲区。
+- **补上盲区(两道防线)**:
+  1. `tests/render-dom.spec.tsx` —— 用**真 React 18 + jsdom** 把设置页整页渲染出来,断言
+     ① 页面文字与下拉选项都在(即**没有被边界兜掉**)、② 下拉的选中值确实是那把 key、
+     ③ `console.error` **一次都没有被调用**。已实测:把 bug 改回去,这个测试立刻红(并且打印出上面那句 React 原话)。
+  2. 冒烟脚本新增**保留 prop 警察**:遍历桩树,断言没有任何元素被传**字符串 ref**、也没有任何**函数组件**
+     收到 `ref`(宿主元素收到 `useRef` 对象仍合法)。这类断言在迷你渲染器里也能跑,补住同一类错误。
+- 顺带把 `jsdom` 加进 devDependencies(仅测试用,不进产物),并让 vitest 同时收集 `tests/**/*.spec.tsx`。
+
 ## [0.9.0] - 2026-09-30
 
 ### 新功能:自己挑一把 key 查余额(下拉选择 + 手动输入)

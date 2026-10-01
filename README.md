@@ -290,9 +290,9 @@ node scripts/verify-balance.mjs 2026-09-11T11:07 2026-09-11T12:20
 ```sh
 pnpm install
 pnpm run typecheck   # tsc --noEmit
-pnpm test            # 140 项单测:计费/时段/别名规则 + 日志折叠(含压缩、分叉继承段、会话格式 v4) + 日历 + 统计与分页 + 兜底缓存 + 余额解析/凭据读取与 describe、写入 + key 清单解析与合并 + 按 key 名的缓存隔离 + 本机守卫
+pnpm test            # 142 项:计费/时段/别名规则 + 日志折叠(含压缩、分叉继承段、会话格式 v4) + 日历 + 统计与分页 + 兜底缓存 + 余额解析/凭据读取与 describe、写入 + key 清单解析与合并 + 按 key 名的缓存隔离 + 本机守卫 + **真 React + jsdom 整页渲染**
 pnpm run build       # lib/index.js(host 半边:路由 + 日志折叠) + lib/client.js(浏览器半边)
-pnpm run smoke       # 产物契约冒烟:在 Node 里跑 client.js,验证注册 id / 插件形状 / 两个插槽 / 真实算价 / 抛错隔离 / 宿主请求
+pnpm run smoke       # 产物契约冒烟:在 Node 里跑 client.js,验证注册 id / 插件形状 / 两个插槽 / 真实算价 / 抛错隔离 / 宿主请求 / 保留 prop(ref)警察
 pnpm run verify      # typecheck + test + build + smoke
 pnpm run verify:balance   # 独立复算全部会话累计 ← 与 API 余额对账用
 pnpm run verify:paths     # 两种折叠入口(有头部 / 无头部+切点)逐条比对 ← 防止「离线验证通过、真机重复计费」

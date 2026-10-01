@@ -272,6 +272,17 @@
       `IncomingMessage` 的异步迭代读取,上限 16 KB。
     - 失效时的表现:清单为空 → 下拉只剩「手动输入 key…」(功能不消失);`describe`/`set` 缺失 → 见第 11 条。
 
+13. **浏览器侧的保留 prop(0.9.1 踩过,务必记住)**:React 会把 `ref` 从 props 里摘走,函数组件**根本收不到**;
+    传**字符串** ref 时 React 18 在 `coerceRef` 里直接抛:
+    ```
+    Error: Function components cannot have string refs. We recommend using useRef() instead.
+    ```
+    这个异常被本插件的错误边界接住 → **设置页整块空白、而导航项照旧在**(注册成功了),极难自查。
+    而只做桩渲染的冒烟测试**不会**发现:它的迷你渲染器不实现 ref、不重渲染、不跑 `act`。
+    因此有两条纪律:① 插件自己组件的 prop **永远不要叫 `ref`**(用 `selectedRef` 这类名字);
+    ② 改完界面必须跑 `tests/render-dom.spec.tsx`(真 React + jsdom,断言 `console.error` 为空),
+    冒烟脚本里也有一个"保留 prop 警察"遍历桩树,断言没有字符串 ref、也没有函数组件收到 ref。
+
 ## 6. 测试策略
 
 | 层 | 工具 | 覆盖 |
@@ -284,6 +295,7 @@
 | 余额与凭据 | `vitest`(`tests/balance.spec.ts`、`tests/api-key.spec.ts`) | 金额字符串解析与非法条目丢弃、`is_available: false` 传递、币种齐全、仅本机守卫(回环各种写法 / 外部 peer / 外部 Host / 未知形态)、凭据缺失与抛错的降级、**key 只出现在 Authorization 头且失败信息里不含 key**、缓存与 `?refresh=1`、刷新失败时保留上次好数据、非本机请求 403 且不调用凭据服务、**按名字取值 / 按名字隔离缓存(换 key 不串数字)/ 非法名字与非法值的提前拒绝 / POST 请求体解析(含坏 JSON)/ 手动 key 不缓存与不回显 / `describe` 三种形态与缺成员·抛错 / `set` 的 saved·unsupported·failed** |
 | key 清单 | `vitest`(`tests/key-catalog.spec.ts`) | 只读 `refs:` 段的名字 / 段结束即停 / 引号与注释 / 无 `refs:` 段的平面形态 / `apiKeyEnv` 与供应商识别 / 被共用的名字去重 / 非名字的值被忽略 / 合并规则(默认第一、来源优先、供应商补全、无 `describe` 时按文本证据、非法名字丢弃)/ 载荷里没有 `sk-` |
 | key 选择与缓存 | `vitest`(`tests/key-store.spec.ts`) | 建议名跳过已占用 / 只记**名字**(存储里不出现 `sk-` 形状)/ 存储不可用时抛错仍安全 / 按名字查询且 URL 只带名字 / 同名字合并并发、不同名字各自缓存 / 手动 key 走请求体且两次点击发两次请求 / `refresh=1` / 网络失败降级为载荷 |
+| **真 React 渲染** | `vitest` + **jsdom**(`tests/render-dom.spec.tsx`) | 用真 React 18 + 真 DOM 把设置页整页渲染出来:文字与下拉选项都在(=**没有被错误边界兜掉**)、下拉的选中值确实是那把 key、`console.error` **一次都没被调用**。补住"迷你渲染器不实现元素语义"的盲区:0.9.1 的保留 prop 事故就是它抓出来的(见 §5 第 13 条) |
 | 独立复算 | `node scripts/verify-balance.mjs` | 绕过宿主直读日志复算全部会话累计,并与 API 余额的差值对账(2026-09-11 实测 Δ$0.249 vs 余额 Δ$0.25) |
 | **双入口一致性** | `node scripts/verify-fold-paths.mjs` | 对每份真实日志(**所有代际**:v3 与 0.1.7 起的 v4 并存)用两种输入各折一遍(有头部→自行找接缝;无头部+`inheritedEventCount`→路由形态)并逐条比对。0.7.1 曾只在第一种形态下正确,页面仍重复计费;这道门就是为那类「离线通过、真机不一致」而加的 |
 | **格式升级对账** | `node scripts/verify-fold-paths.mjs` + 一次性探针 | 0.7.3 适配 0.1.7 时,对同一会话的 v3/v4 两份真实日志逐回合比对:共同回合**全部一致**,v4 只是多了升级后的新回合 —— 这才是「格式升级没有改变历史数字」的证据,而不是口头保证 |

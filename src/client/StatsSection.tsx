@@ -246,7 +246,7 @@ export function CostStatsSection({ t }: CostStatsProps): ReactNode {
       <KeyPicker
         catalog={catalog}
         mode={mode}
-        ref={targetRef}
+        selectedRef={targetRef}
         manualKey={manualKey}
         remember={remember}
         rememberAs={rememberAs}

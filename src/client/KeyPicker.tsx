@@ -28,8 +28,16 @@ export interface KeyPickerProps {
   readonly catalog: KeysPayload | undefined
   /** `'ref'` = use a named credential, `'manual'` = use the pasted key. */
   readonly mode: 'ref' | 'manual'
-  /** The picked credential name (ignored in manual mode). */
-  readonly ref: string | undefined
+  /**
+   * The picked credential name (ignored in manual mode).
+   *
+   * Deliberately NOT named `ref`: React reserves that prop. A function component
+   * never receives it (the value is diverted before props), and a STRING `ref`
+   * makes React throw ("Element ref was specified as a string ... but no owner
+   * was set"). 0.9.0 shipped with `ref={targetRef}`, the boundary caught that
+   * throw, and the settings page rendered blank.
+   */
+  readonly selectedRef: string | undefined
   /** The pasted key; lives in memory only. */
   readonly manualKey: string
   /** Whether the pasted key should be written into DSH's credential store. */
@@ -69,7 +77,7 @@ function optionLabel(row: KeysPayload['refs'][number], tr: Translator): string {
  */
 export function KeyPicker(props: KeyPickerProps): ReactNode {
   const {
-    catalog, mode, ref, manualKey, remember, rememberAs, loading, disabled,
+    catalog, mode, selectedRef, manualKey, remember, rememberAs, loading, disabled,
     onPickRef, onPickManual, onManualKey, onRemember, onRememberAs, onQuery, tr,
   } = props
   const rows = catalog?.refs ?? []
@@ -81,7 +89,7 @@ export function KeyPicker(props: KeyPickerProps): ReactNode {
       <select
         className={CLASS.keySelect}
         aria-label={tr('stats.key.label')}
-        value={manual ? MANUAL_OPTION : (ref ?? '')}
+        value={manual ? MANUAL_OPTION : (selectedRef ?? '')}
         onChange={(event) => {
           const value = event.target.value
           if (value === MANUAL_OPTION) onPickManual()
