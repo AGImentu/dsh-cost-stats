@@ -64,7 +64,7 @@ export interface BalancePayload {
   readonly message?: string
 }
 
-/** Where a candidate key reference was discovered. */
+/** Where a candidate model entry was discovered. */
 export type KeyRefOrigin =
   /** The harness default: DSH's own model configuration uses this name. */
   | 'default'
@@ -72,19 +72,27 @@ export type KeyRefOrigin =
   | 'store'
   /** Named by a provider's `apiKeyEnv` in the profile configuration. */
   | 'config'
+  /** Shipped by the harness itself (its configuration is not a file on disk). */
+  | 'harness'
 
-/** One selectable API key, described WITHOUT its value. */
+/** One selectable model, described WITHOUT any key value. */
 export interface KeyRefInfo {
-  /** The credential reference (a POSIX-style environment variable name). */
+  /**
+   * The dropdown value: a credential reference, OR — for a model that has no key
+   * at all — the synthetic provider id (`deepseek-account`).
+   *
+   * The synthetic form is deliberately NOT a valid reference (the pattern below
+   * rejects it), so it can never be mistaken for a credential by the balance
+   * route, and `noKey` marks it so the page never asks.
+   */
   readonly ref: string
   /**
-   * What to CALL this entry in the page: the provider's `displayName` from the
-   * model configuration when one was found, else the reference itself.
+   * What to CALL this entry in the page: the model provider's own name.
    *
    * The reader picks from a dropdown that mirrors 「设置 → 模型」, so it has to
    * carry the same names that page shows — a provider whose display name is a
    * base URL (as the profile in front of us does) reads as that URL, exactly
-   * like it does there. The reference stays available for hovering.
+   * like it does there. The credential reference stays on the option's tooltip.
    */
   readonly label?: string
   /** Whether the reference currently resolves to something. */
@@ -93,15 +101,25 @@ export interface KeyRefInfo {
   /** Provider id from the profile configuration, when one was found. */
   readonly provider?: string
   /**
-   * The model-provider ids whose traffic this credential pays for.
+   * The model-provider ids whose traffic this entry stands for.
    *
    * This is what the page filters the statistics by: a stored reply records the
    * provider that served it (`deepseek-official`, `mixtoken`, …), so "show me
-   * what THIS key was used for" is a set membership test against these ids.
+   * what THIS model was used for" is a set membership test against these ids.
    * Collected from every configuration block declaring the reference, plus a
-   * built-in list for the references the harness itself owns.
+   * built-in list for the models the harness itself ships.
    */
   readonly providers?: readonly string[]
+  /**
+   * `true` when this model has NO API key, so no balance can be asked for.
+   *
+   * `deepseek-account` is DSH's login account: its credential is a login token,
+   * not an API key — measured against the official endpoint, a token like that
+   * answers `401 Authentication Fails, Your api key … is invalid`. Such an entry
+   * is still listed (the table can be filtered to it), but the page says why the
+   * balance is unavailable instead of pretending the key is merely missing.
+   */
+  readonly noKey?: true
 }
 
 /** The `GET /cost-stats/keys` payload: what can be picked, never what it is. */

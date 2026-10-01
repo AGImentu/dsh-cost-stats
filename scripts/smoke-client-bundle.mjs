@@ -204,13 +204,14 @@ const balancePayload = {
   ref: 'DEEPSEEK_API_KEY',
 }
 
-/** The key catalog's canned answer: names, labels and flags, never values. */
+/** The model catalog's canned answer: names, labels and flags, never values. */
 const keysPayload = {
   ok: true,
   default: 'DEEPSEEK_API_KEY',
   refs: [
-    { ref: 'DEEPSEEK_API_KEY', label: 'DeepSeek', configured: true, origin: 'default' },
-    { ref: 'MIXTOKEN_API_KEY', label: 'https://api.mixtoken.ai/v1', configured: true, origin: 'store', provider: 'mixtoken' },
+    { ref: 'deepseek-account', label: 'DeepSeek 账号', configured: false, origin: 'harness', providers: ['deepseek-account'], noKey: true },
+    { ref: 'DEEPSEEK_API_KEY', label: 'DeepSeek', configured: true, origin: 'default', providers: ['deepseek-official'] },
+    { ref: 'MIXTOKEN_API_KEY', label: 'https://api.mixtoken.ai/v1', configured: true, origin: 'store', provider: 'mixtoken', providers: ['mixtoken'] },
   ],
 }
 
@@ -458,7 +459,7 @@ check('the balance readout never carries a credential-shaped string',
 // 8b. The model row: 「全部」 first, then the catalog's models under the names
 // 「设置 → 模型」 uses, the query button, and no way to type a key at all.
 check(`stats page names the model providers from the catalog (got "${reopened.slice(0, 160)}")`,
-  reopened.includes('DeepSeek') && reopened.includes('https://api.mixtoken.ai/v1'))
+  reopened.includes('DeepSeek') && reopened.includes('DeepSeek 账号') && reopened.includes('https://api.mixtoken.ai/v1'))
 check('the dropdown shows the model names, not the credential references',
   !reopened.includes('DEEPSEEK_API_KEY') && !reopened.includes('MIXTOKEN_API_KEY'))
 check('the first option is the unfiltered 「全部」', reopened.includes('全部'))

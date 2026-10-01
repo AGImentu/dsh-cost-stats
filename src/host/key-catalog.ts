@@ -37,20 +37,37 @@ const MAX_FILE_BYTES = 256 * 1024
 const MAX_CONFIG_FILES = 8
 
 /**
- * Facts about references this plugin knows by contract rather than by file.
+ * The models the harness itself ships, which no scan can discover.
  *
- * `DEEPSEEK_API_KEY` is declared by the DeepSeek providers that ship inside the
- * harness, whose configuration is not a file on disk — so no scan can discover
- * either the name 「设置 → 模型」 shows for it, or which model providers bill
- * against it. Those two facts live here, in one place; every other entry takes
- * both from the profile configuration.
+ * Their configuration lives inside the app rather than in a file on disk, so
+ * neither the name 「设置 → 模型」 shows for them nor the provider id their replies
+ * carry is readable from here. Both are measured facts instead, taken from real
+ * stored replies and from that settings page:
  *
- * `deepseek-official` is the provider id the stored replies carry for the
- * official API-key route (observed in real logs; `deepseek-account` is the
- * separate login-account route, which has no API key at all).
+ * - **DeepSeek** (`deepseek-official`) bills against `DEEPSEEK_API_KEY`;
+ * - **DeepSeek 账号** (`deepseek-account`) is DSH's LOGIN account. It has no API
+ *   key at all: its credential is a login token, and a token like that answers
+ *   `401 Authentication Fails, Your api key … is invalid` on the official balance
+ *   endpoint (measured). It is listed so the table can be filtered to its usage,
+ *   with `noKey` telling the page why no balance can be asked for.
  */
-const BUILT_IN: Readonly<Record<string, { readonly label: string, readonly providers: readonly string[] }>> = {
-  DEEPSEEK_API_KEY: { label: 'DeepSeek', providers: ['deepseek-official'] },
+const HARNESS_MODELS: readonly {
+  readonly ref: string
+  readonly label: string
+  readonly providers: readonly string[]
+  readonly noKey?: true
+}[] = [
+  { ref: 'deepseek-account', label: 'DeepSeek 账号', providers: ['deepseek-account'], noKey: true },
+  { ref: 'DEEPSEEK_API_KEY', label: 'DeepSeek', providers: ['deepseek-official'] },
+]
+
+/**
+ * The harness model that owns a credential reference, if one does.
+ * @param ref - the credential reference.
+ * @returns the built-in entry, or undefined.
+ */
+function harnessModelFor(ref: string) {
+  return HARNESS_MODELS.find(model => model.ref === ref && model.noKey !== true)
 }
 
 /**
@@ -195,10 +212,10 @@ export interface CatalogInput {
 /**
  * Merge every source into the list the page renders.
  *
- * The default reference always comes first — it is what the harness itself uses
- * to talk to DeepSeek, so it is the one a reader almost always wants — then the
- * remaining names in a stable order (store first, then configuration). A name
- * seen twice keeps its earliest, most authoritative origin.
+ * Order follows 「设置 → 模型」: the models the harness ships first (its login
+ * account, then the DeepSeek API-key provider), then anything the profile
+ * declares or the credential store holds. A name seen twice keeps its earliest,
+ * most authoritative origin.
  * @param input - the collected evidence.
  * @returns the catalog rows.
  */
@@ -214,7 +231,7 @@ export function buildCatalog(input: CatalogInput): KeyRefInfo[] {
   const add = (ref: string, origin: KeyRefOrigin, provider?: string, label?: string): void => {
     if (!isApiKeyRef(ref)) return
     // Facts the harness owns but no readable file declares.
-    const builtIn = BUILT_IN[ref]
+    const builtIn = harnessModelFor(ref)
     const called = label ?? builtIn?.label
     const providers = [
       ...(builtIn?.providers ?? []),
@@ -246,7 +263,21 @@ export function buildCatalog(input: CatalogInput): KeyRefInfo[] {
       ...(providers.length === 0 ? {} : { providers }),
     })
   }
+  /** A harness model that owns no credential: listed for filtering only. */
+  const addKeyless = (model: (typeof HARNESS_MODELS)[number]): void => {
+    if (rows.some(row => row.ref === model.ref)) return
+    rows.push({
+      ref: model.ref,
+      label: model.label,
+      // Nothing can resolve: there is no credential behind this model at all.
+      configured: false,
+      origin: 'harness',
+      providers: model.providers,
+      noKey: true,
+    })
+  }
 
+  for (const model of HARNESS_MODELS) if (model.noKey === true) addKeyless(model)
   add(input.defaultRef, 'default')
   for (const ref of input.storeRefs) add(ref, 'store')
   for (const entry of input.configRefs) add(entry.ref, 'config', entry.provider, entry.label)

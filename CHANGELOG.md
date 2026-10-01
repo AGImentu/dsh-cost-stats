@@ -2,6 +2,34 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 与语义化版本。
 
+## [0.11.0] - 2026-10-01
+
+### 下拉里补上 harness 自带的模型(含「DeepSeek 账号」登录那条)
+
+- **下拉现在与「设置 → 模型」一一对应**:`全部` / **`DeepSeek 账号`** / `DeepSeek` /
+  `https://api.mixtoken.ai/v1`。harness 自带的两条(登录账号与官方 API key provider)配置在程序内部、
+  磁盘上没有文件,所以它们的**名字与 provider id**是内置的实测事实:
+  `deepseek-account`(登录账号)、`deepseek-official`(官方 API key);
+  profile 里配置的 provider 仍按 `displayName` 显示。
+- **登录账号没有 key,这是实测结论(不是猜测)**:它的凭据是登录令牌(存在凭据库
+  `deepseek-account-platform/default` 的 `payload.token`),拿它去问官方
+  `api.deepseek.com/user/balance` 得到 **HTTP 401**
+  `Authentication Fails, Your api key: ****xWcF is invalid`;同一时刻用 `DEEPSEEK_API_KEY` 问则是
+  **200 + 余额**。所以账号那条:
+  - ✅ 可以选中,**表格会筛选出它产生的明细**(实测本机 16 条);
+  - ❌ **不能查余额**:读数显示「账号登录,没有 API key」,查询按钮**禁用**(悬停说明原因与去处:
+    「设置 → 账号与余额」),`queryBalance()` 里也有一道守卫 —— 即使被误点也不会发请求。
+- 新增 `KeyRefInfo.noKey` 与 `origin: 'harness'`;下拉里的合成值 `deepseek-account`
+  **不是合法凭据名**(凭据名正则不接受短横线),所以它永远不会被当成 key 送给余额路由(有单测钉住)。
+
+### 测试(157 项)
+
+- 清单:harness 两条模型排在最前、账号条目标记为 `noKey` 且 `configured: false`、
+  内置换算表(`DEEPSEEK_API_KEY → deepseek-official`)仍生效、合成 id 一定不是合法凭据名。
+- 真 DOM:选中账号后**表格只剩它那一行**、读数变成「账号登录,没有 API key」、
+  按钮 `disabled` 且**强行点击也不发任何请求**;「全部」/模型/账号三个选项的顺序与取值。
+- 冒烟:下拉必须渲染出「DeepSeek 账号」,且首屏仍然不查余额。
+
 ## [0.10.0] - 2026-10-01
 
 ### 交互重构:下拉变成「模型筛选」,余额挪到按钮右边,手动输入整体删除

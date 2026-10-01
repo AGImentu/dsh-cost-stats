@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { buildCatalog, refsFromConfig, refsFromCredentialStore } from '../src/host/key-catalog.ts'
+import { isApiKeyRef } from '../src/host/api-key.ts'
 
 /**
  * The shape DSH's local credential store actually has: a version, a list of
@@ -149,11 +150,22 @@ describe('buildCatalog', () => {
     })
   }
 
-  it('puts the harness default first and keeps every source', () => {
-    expect(catalog('set').map(row => row.ref)).toEqual(['DEEPSEEK_API_KEY', 'MIXTOKEN_API_KEY', 'OTHER_KEY'])
-    expect(catalog('set')[0]).toMatchObject({ ref: 'DEEPSEEK_API_KEY', origin: 'default', configured: true })
-    expect(catalog('set')[1]).toMatchObject({ ref: 'MIXTOKEN_API_KEY', origin: 'store', provider: 'mixtoken' })
-    expect(catalog('set')[2]).toMatchObject({ ref: 'OTHER_KEY', origin: 'config', configured: true })
+  it('lists the harness models first, then every discovered source', () => {
+    expect(catalog('set').map(row => row.ref))
+      .toEqual(['deepseek-account', 'DEEPSEEK_API_KEY', 'MIXTOKEN_API_KEY', 'OTHER_KEY'])
+    // DSH's login account: listed so its usage can be filtered, marked as having
+    // no key at all (so the page never tries to query a balance for it).
+    expect(catalog('set')[0]).toMatchObject({
+      ref: 'deepseek-account',
+      label: 'DeepSeek 账号',
+      origin: 'harness',
+      configured: false,
+      noKey: true,
+      providers: ['deepseek-account'],
+    })
+    expect(catalog('set')[1]).toMatchObject({ ref: 'DEEPSEEK_API_KEY', origin: 'default', configured: true })
+    expect(catalog('set')[2]).toMatchObject({ ref: 'MIXTOKEN_API_KEY', origin: 'store', provider: 'mixtoken' })
+    expect(catalog('set')[3]).toMatchObject({ ref: 'OTHER_KEY', origin: 'config', configured: true })
   })
 
   it('labels each entry the way the model settings page names it', () => {
@@ -167,10 +179,11 @@ describe('buildCatalog', () => {
       envHas: () => false,
       state: () => 'set',
     })
-    // The harness default has no readable config file, so its shipped name is
-    // the built-in one; a configured provider takes its own displayName; a
-    // provider without one falls back to the reference itself in the page.
-    expect(rows.map(row => row.label)).toEqual(['DeepSeek', 'https://api.mixtoken.ai/v1', undefined])
+    // The harness models have no readable config file, so their shipped names are
+    // built in; a configured provider takes its own displayName; a provider with
+    // neither falls back to the reference itself in the page.
+    expect(rows.map(row => row.label))
+      .toEqual(['DeepSeek 账号', 'DeepSeek', 'https://api.mixtoken.ai/v1', undefined])
   })
 
   it('fills in a label discovered after the row was created', () => {
@@ -182,10 +195,10 @@ describe('buildCatalog', () => {
       state: () => 'set',
     })
     // The store mentioned it first (no label); the config supplies both facts.
-    expect(rows[1]).toMatchObject({ ref: 'MIXTOKEN_API_KEY', origin: 'store', provider: 'mixtoken', label: 'Mixtoken' })
+    expect(rows[2]).toMatchObject({ ref: 'MIXTOKEN_API_KEY', origin: 'store', provider: 'mixtoken', label: 'Mixtoken' })
   })
 
-  it('collects every provider id a credential pays for, including the built-in one', () => {
+  it('collects every provider id a model stands for, including the built-in ones', () => {
     const rows = buildCatalog({
       defaultRef: 'DEEPSEEK_API_KEY',
       storeRefs: ['MIXTOKEN_API_KEY'],
@@ -198,24 +211,26 @@ describe('buildCatalog', () => {
       envHas: () => false,
       state: () => 'set',
     })
-    expect(rows[0]).toMatchObject({
+    expect(rows[1]).toMatchObject({
       ref: 'DEEPSEEK_API_KEY',
       label: 'DeepSeek',
       providers: ['deepseek-official'],
     })
-    expect(rows[1]).toMatchObject({
+    expect(rows[2]).toMatchObject({
       ref: 'MIXTOKEN_API_KEY',
       providers: ['mixtoken', 'mixtoken-backup'],
     })
   })
 
   it('reports a reference the service says is not configured', () => {
-    expect(catalog('unset').map(row => row.configured)).toEqual([false, false, false])
+    // The account is always false: there is no credential behind it to configure.
+    expect(catalog('unset').map(row => row.configured)).toEqual([false, false, false, false])
   })
 
   it('falls back to textual evidence when the build cannot describe', () => {
     const rows = catalog('unknown', ref => ref === 'OTHER_KEY')
     expect(rows.map(row => [row.ref, row.configured])).toEqual([
+      ['deepseek-account', false],
       ['DEEPSEEK_API_KEY', false],
       ['MIXTOKEN_API_KEY', true],
       ['OTHER_KEY', true],
@@ -230,7 +245,22 @@ describe('buildCatalog', () => {
       envHas: () => false,
       state: () => 'unknown',
     })
-    expect(rows.map(row => row.ref)).toEqual(['DEEPSEEK_API_KEY'])
+    expect(rows.map(row => row.ref)).toEqual(['deepseek-account', 'DEEPSEEK_API_KEY'])
+  })
+
+  it('never lets a synthetic account id be mistaken for a credential', () => {
+    // `deepseek-account` is a dropdown value, not a reference: the credential
+    // pattern rejects it, so the balance route can never be asked for it.
+    const rows = buildCatalog({
+      defaultRef: 'DEEPSEEK_API_KEY',
+      storeRefs: [],
+      configRefs: [],
+      envHas: () => false,
+      state: () => 'set',
+    })
+    const account = rows.find(row => row.noKey === true)
+    expect(account?.ref).toBe('deepseek-account')
+    expect(isApiKeyRef(String(account?.ref))).toBe(false)
   })
 
   it('carries no value: the rows are names and flags only', () => {

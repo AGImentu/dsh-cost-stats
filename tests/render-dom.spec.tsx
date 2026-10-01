@@ -31,6 +31,8 @@ const keysPayload: KeysPayload = {
   ok: true,
   default: 'DEEPSEEK_API_KEY',
   refs: [
+    // DSH's login account: no key at all, listed so its usage can be filtered to.
+    { ref: 'deepseek-account', label: 'DeepSeek 账号', configured: false, origin: 'harness', providers: ['deepseek-account'], noKey: true },
     { ref: 'DEEPSEEK_API_KEY', label: 'DeepSeek', configured: true, origin: 'default', providers: ['deepseek-official'] },
     { ref: 'MIXTOKEN_API_KEY', label: 'https://api.mixtoken.ai/v1', configured: true, origin: 'store', provider: 'mixtoken', providers: ['mixtoken'] },
   ],
@@ -79,6 +81,25 @@ const usagePayload = {
       outputTokens: 2_000,
       reasoningTokens: 0,
       tokens: 4_000,
+      attempts: 1,
+    },
+    {
+      sessionId: 's3',
+      sessionTitle: 'account session',
+      subagent: false,
+      turn: 3,
+      at: Date.now(),
+      provider: 'deepseek-account',
+      model: 'deepseek-flash',
+      plan: 'DeepSeek-V4.1-Flash',
+      priced: true,
+      cny: 3,
+      usd: 0.42,
+      uncachedInputTokens: 3_000,
+      cacheReadTokens: 0,
+      outputTokens: 3_000,
+      reasoningTokens: 0,
+      tokens: 6_000,
       attempts: 1,
     },
   ],
@@ -176,6 +197,7 @@ describe('the statistics page under the real renderer', () => {
     // The dropdown names the models the way 「设置 → 模型」 does — not the
     // credential references.
     expect(text).toContain('DeepSeek')
+    expect(text).toContain('DeepSeek 账号')
     expect(text).toContain('https://api.mixtoken.ai/v1')
     expect(text).not.toContain('DEEPSEEK_API_KEY')
     expect(text).not.toContain('MIXTOKEN_API_KEY')
@@ -185,8 +207,8 @@ describe('the statistics page under the real renderer', () => {
     expect(select).not.toBeNull()
     expect(select?.value).toBe('__all__')
     expect([...container.querySelectorAll('option')].map(option => option.value))
-      .toEqual(['__all__', 'DEEPSEEK_API_KEY', 'MIXTOKEN_API_KEY'])
-    expect(container.querySelectorAll('tbody tr')).toHaveLength(2)
+      .toEqual(['__all__', 'deepseek-account', 'DEEPSEEK_API_KEY', 'MIXTOKEN_API_KEY'])
+    expect(container.querySelectorAll('tbody tr')).toHaveLength(3)
 
     // The page must not ask for a balance on its own: only the button does that.
     expect(urls().some(url => url.includes('/cost-stats/balance'))).toBe(false)
@@ -242,6 +264,32 @@ describe('the statistics page under the real renderer', () => {
     // submit a key.
     expect(container.innerHTML).not.toMatch(/sk-[A-Za-z0-9_-]{8,}/)
     expect(container.querySelector('input')).toBeNull()
+    expect(errors.join('\n')).toBe('')
+
+    await act(async () => { root?.unmount() })
+    root = undefined
+  })
+
+  it('lists the login account, and says why its balance cannot be asked for', async () => {
+    await mount(createElement(CostStatsEntry, { t: undefined }))
+    const select = container.querySelector('select') as HTMLSelectElement
+
+    await act(async () => { pickOption(select, 'deepseek-account') })
+    await act(async () => { await new Promise(resolve => { setTimeout(resolve, 10) }) })
+
+    // The account is a filter like any other…
+    const rows = [...container.querySelectorAll('tbody tr')].map(row => row.textContent ?? '')
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toContain('account session')
+    // …but it is not an unset key: the readout says what it is, the button is
+    // disabled, and pressing it anyway sends nothing.
+    expect(container.textContent).toContain('账号登录,没有 API key')
+    expect(container.textContent).not.toContain('未查询')
+    const button = queryButton()
+    expect(button.disabled).toBe(true)
+    await act(async () => { button.click() })
+    await act(async () => { await new Promise(resolve => { setTimeout(resolve, 20) }) })
+    expect(urls().some(url => url.includes('/cost-stats/balance'))).toBe(false)
     expect(errors.join('\n')).toBe('')
 
     await act(async () => { root?.unmount() })
