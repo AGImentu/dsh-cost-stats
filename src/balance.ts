@@ -91,6 +91,16 @@ export type KeyRefOrigin =
 export interface KeyRefInfo {
   /** The credential reference (a POSIX-style environment variable name). */
   readonly ref: string
+  /**
+   * What to CALL this entry in the page: the provider's `displayName` from the
+   * model configuration when one was found, else the reference itself.
+   *
+   * The reader picks from a dropdown that mirrors 「设置 → 模型」, so it has to
+   * carry the same names that page shows — a provider whose display name is a
+   * base URL (as the profile in front of us does) reads as that URL, exactly
+   * like it does there. The reference stays available for hovering.
+   */
+  readonly label?: string
   /** Whether the reference currently resolves to something. */
   readonly configured: boolean
   readonly origin: KeyRefOrigin

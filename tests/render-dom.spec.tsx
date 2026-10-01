@@ -34,8 +34,8 @@ const keysPayload: KeysPayload = {
   ok: true,
   default: 'DEEPSEEK_API_KEY',
   refs: [
-    { ref: 'DEEPSEEK_API_KEY', configured: true, origin: 'default' },
-    { ref: 'MIXTOKEN_API_KEY', configured: true, origin: 'store', provider: 'mixtoken' },
+    { ref: 'DEEPSEEK_API_KEY', label: 'DeepSeek', configured: true, origin: 'default' },
+    { ref: 'MIXTOKEN_API_KEY', label: 'https://api.mixtoken.ai/v1', configured: true, origin: 'store', provider: 'mixtoken' },
   ],
   canRemember: true,
 }
@@ -128,9 +128,14 @@ describe('the statistics page under the real renderer', () => {
 
     const text = container.textContent ?? ''
     expect(text).toContain('费用统计')
-    expect(text).toContain('查询KEY余额')
-    expect(text).toContain('DEEPSEEK_API_KEY')
-    expect(text).toContain('MIXTOKEN_API_KEY')
+    expect(text).toContain('查询余额')
+    // The row is labelled 模型 and names the providers the way 「设置 → 模型」 does
+    // — the credential references stay in the option tooltips, not the labels.
+    expect(text).toContain('模型')
+    expect(text).toContain('DeepSeek')
+    expect(text).toContain('https://api.mixtoken.ai/v1')
+    expect(text).not.toContain('DEEPSEEK_API_KEY')
+    expect(text).not.toContain('MIXTOKEN_API_KEY')
     // The money of the picked credential, once the host answer landed.
     expect(text).toContain('余额 ¥12.34')
 
@@ -142,6 +147,8 @@ describe('the statistics page under the real renderer', () => {
     expect(select?.value).toBe('DEEPSEEK_API_KEY')
     expect([...container.querySelectorAll('option')].map(option => option.value))
       .toEqual(['DEEPSEEK_API_KEY', 'MIXTOKEN_API_KEY', '__manual__'])
+    expect([...container.querySelectorAll('option')].map(option => option.textContent))
+      .toEqual(['DeepSeek', 'https://api.mixtoken.ai/v1', '手动输入 key…'])
 
     // A throw inside the page is caught by the plugin's boundary and turns the
     // section into nothing; React logs it first, so "no complaints" is the

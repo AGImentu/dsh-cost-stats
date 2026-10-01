@@ -37,6 +37,18 @@ const MAX_FILE_BYTES = 256 * 1024
 const MAX_CONFIG_FILES = 8
 
 /**
+ * Names for references this plugin knows by contract rather than by file.
+ *
+ * `DEEPSEEK_API_KEY` is declared by the DeepSeek provider that ships inside the
+ * harness, whose configuration is not a file on disk — so no scan can discover
+ * the name 「设置 → 模型」 shows for it. This map is that one fact, kept in one
+ * place; every other entry takes its label from the profile configuration.
+ */
+const DEFAULT_LABELS: Readonly<Record<string, string>> = {
+  DEEPSEEK_API_KEY: 'DeepSeek',
+}
+
+/**
  * The `refs:` block of the credential store: the names that ARE credentials.
  *
  * The store is a small YAML document (`version`, `records`, then `refs`), and
@@ -92,6 +104,8 @@ export interface ConfigKeyRef {
   readonly ref: string
   /** The provider id that declared it (`mixtoken`), when one could be found. */
   readonly provider?: string
+  /** The provider's `displayName` — the name 「设置 → 模型」 shows for it. */
+  readonly label?: string
 }
 
 /**
@@ -99,8 +113,10 @@ export interface ConfigKeyRef {
  *
  * These are the keys the reader sees as "the key of provider X" in the model
  * settings, which is exactly the list they expect in this page's dropdown. The
- * enclosing provider id is recovered by walking up to the nearest shallower
- * key, because that is the shape every DSH provider block uses.
+ * enclosing provider block is recovered by walking up to the nearest shallower
+ * key, and its `displayName` (read from inside that block) becomes the entry's
+ * label — so the dropdown carries the same wording the model settings do,
+ * including a provider whose display name is a base URL.
  * @param text - one configuration file's contents.
  * @returns the declared references, in file order, deduplicated.
  */
@@ -119,15 +135,40 @@ export function refsFromConfig(text: string): ConfigKeyRef[] {
 
     const indent = (match[1] ?? '').length
     let provider: string | undefined
+    let blockStart = -1
+    let providerIndent = -1
     for (let above = index - 1; above >= 0; above -= 1) {
       const candidate = lines[above] ?? ''
       const outer = /^([ \t]*)([A-Za-z_][\w.-]*)\s*:\s*$/.exec(candidate)
       if (outer === null) continue
       if ((outer[1] ?? '').length >= indent) continue
       provider = outer[2]
+      blockStart = above
+      providerIndent = (outer[1] ?? '').length
       break
     }
-    found.push(provider === undefined ? { ref } : { ref, provider })
+
+    // `displayName` lives in the same block as `apiKeyEnv`; the block ends where
+    // the indentation returns to the provider's own level.
+    let label: string | undefined
+    if (blockStart >= 0) {
+      for (let below = blockStart + 1; below < lines.length; below += 1) {
+        const inner = lines[below] ?? ''
+        const innerIndent = /^[ \t]*/.exec(inner)?.[0].length ?? 0
+        if (inner.trim() !== '' && innerIndent <= providerIndent) break
+        const named = /^[ \t]*displayName\s*:\s*(?:"([^"]*)"|'([^']*)'|(.+?))\s*$/.exec(inner)
+        if (named === null) continue
+        const value = (named[1] ?? named[2] ?? named[3] ?? '').trim()
+        if (value !== '') label = value
+        break
+      }
+    }
+
+    found.push({
+      ref,
+      ...(provider === undefined ? {} : { provider }),
+      ...(label === undefined ? {} : { label }),
+    })
   }
   return found
 }
@@ -165,25 +206,38 @@ export function buildCatalog(input: CatalogInput): KeyRefInfo[] {
       ? input.storeRefs.includes(ref) || input.envHas(ref)
       : state === 'set'
   }
-  const add = (ref: string, origin: KeyRefOrigin, provider?: string): void => {
+  const add = (ref: string, origin: KeyRefOrigin, provider?: string, label?: string): void => {
     if (!isApiKeyRef(ref)) return
+    // A name the harness's own model configuration owns but no readable file
+    // declares: the provider's shipped name is what 「设置 → 模型」 shows.
+    const called = label ?? DEFAULT_LABELS[ref]
     const existing = rows.find(row => row.ref === ref)
     if (existing !== undefined) {
       // A name seen twice keeps its earliest (most authoritative) origin, but a
-      // provider label discovered later still helps the reader recognize it.
-      if (existing.provider === undefined && provider !== undefined) {
-        rows[rows.indexOf(existing)] = { ...existing, provider }
+      // provider or label discovered later still helps the reader recognize it.
+      const provider2 = existing.provider ?? provider
+      const label2 = existing.label ?? called
+      if (provider2 !== existing.provider || label2 !== existing.label) {
+        rows[rows.indexOf(existing)] = {
+          ...existing,
+          ...(provider2 === undefined ? {} : { provider: provider2 }),
+          ...(label2 === undefined ? {} : { label: label2 }),
+        }
       }
       return
     }
-    rows.push(provider === undefined
-      ? { ref, configured: stateOf(ref), origin }
-      : { ref, configured: stateOf(ref), origin, provider })
+    rows.push({
+      ref,
+      configured: stateOf(ref),
+      origin,
+      ...(provider === undefined ? {} : { provider }),
+      ...(called === undefined ? {} : { label: called }),
+    })
   }
 
   add(input.defaultRef, 'default')
   for (const ref of input.storeRefs) add(ref, 'store')
-  for (const entry of input.configRefs) add(entry.ref, 'config', entry.provider)
+  for (const entry of input.configRefs) add(entry.ref, 'config', entry.provider, entry.label)
   return rows
 }
 

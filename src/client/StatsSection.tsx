@@ -226,6 +226,11 @@ export function CostStatsSection({ t }: CostStatsProps): ReactNode {
     setPage(1)
   }, [])
 
+  /** What the chip's tooltip calls the money's source: the model's own name. */
+  const sourceLabel = mode === 'manual'
+    ? tr('stats.balance.manualSource')
+    : (catalog?.refs.find(row => row.ref === targetRef)?.label ?? targetRef)
+
   return (
     <div className={CLASS.stats} data-cost-stats-page>
       <div className={CLASS.statsHead}>
@@ -238,7 +243,7 @@ export function CostStatsSection({ t }: CostStatsProps): ReactNode {
           loading={balanceLoading}
           onQuery={queryBalance}
           tr={tr}
-          source={mode === 'manual' ? tr('stats.balance.manualSource') : targetRef}
+          source={sourceLabel}
           disabled={mode === 'manual' && manualKey.trim().length === 0}
         />
       </div>

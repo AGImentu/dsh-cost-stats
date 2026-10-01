@@ -183,13 +183,13 @@ const balancePayload = {
   ref: 'DEEPSEEK_API_KEY',
 }
 
-/** The key catalog's canned answer: names and flags, never values. */
+/** The key catalog's canned answer: names, labels and flags, never values. */
 const keysPayload = {
   ok: true,
   default: 'DEEPSEEK_API_KEY',
   refs: [
-    { ref: 'DEEPSEEK_API_KEY', configured: true, origin: 'default' },
-    { ref: 'MIXTOKEN_API_KEY', configured: true, origin: 'store', provider: 'mixtoken' },
+    { ref: 'DEEPSEEK_API_KEY', label: 'DeepSeek', configured: true, origin: 'default' },
+    { ref: 'MIXTOKEN_API_KEY', label: 'https://api.mixtoken.ai/v1', configured: true, origin: 'store', provider: 'mixtoken' },
   ],
   canRemember: true,
 }
@@ -413,17 +413,20 @@ check('the balance readout is clickable, so a failed query can be retried',
 // 8b. The key row: the dropdown lists the catalog's NAMES (plus the manual
 // entry), the button says what it does, and the balance query names the key it
 // was asked about instead of silently using "whatever is configured".
-check(`stats page lists the configured key names (got "${reopened.slice(0, 140)}")`,
-  reopened.includes('DEEPSEEK_API_KEY') && reopened.includes('MIXTOKEN_API_KEY'))
-check('the key dropdown keeps a manual entry reachable', reopened.includes('手动输入 key'))
-check('the key row carries the query button', reopened.includes('查询KEY余额'))
+check(`stats page names the model providers from the catalog (got "${reopened.slice(0, 160)}")`,
+  reopened.includes('DeepSeek') && reopened.includes('https://api.mixtoken.ai/v1'))
+check('the dropdown shows the model names, not the credential references',
+  !reopened.includes('DEEPSEEK_API_KEY') && !reopened.includes('MIXTOKEN_API_KEY'))
+check('the key row keeps a manual entry reachable', reopened.includes('手动输入 key'))
+check('the key row carries the query button', reopened.includes('查询余额'))
+check('the key row is labelled 模型, like the model settings page', reopened.includes('模型'))
 check(`the balance query names the picked credential (got ${JSON.stringify(fetched)})`,
   fetched.includes('/cost-stats/balance?ref=DEEPSEEK_API_KEY'))
 check('the balance query is a GET with no body, and no key ever reaches a URL',
   requests.filter(entry => entry.url.includes('/cost-stats/balance'))
     .every(entry => entry.method === undefined && entry.body === undefined))
-check('the chip says which key the money belongs to',
-  collectProp(reopenedTree, 'title').some(title => String(title).includes('来源:DEEPSEEK_API_KEY')))
+check('the chip says which model the money belongs to',
+  collectProp(reopenedTree, 'title').some(title => String(title).includes('来源:DeepSeek')))
 check('the page never renders a credential-shaped string',
   !/sk-[A-Za-z0-9_-]{8,}/.test(reopened) && !/sk-[A-Za-z0-9_-]{8,}/.test(JSON.stringify(requests)))
 

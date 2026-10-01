@@ -2,6 +2,26 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 与语义化版本。
 
+## [0.9.2] - 2026-10-01
+
+### 交互:那一行按「模型」的说法来(用户反馈)
+
+- **行标签 `KEY` → `模型`,`按钮「查询KEY余额」→「查询余额」**。
+- **下拉显示「设置 → 模型」里的名字**,不再显示凭据名(`DEEPSEEK_API_KEY` 这种)。
+  实现:清单里的每一项新增 `label` —— 主机从 profile 配置的 provider 块里读它的 **`displayName`**
+  (读取范围严格限定在声明了该 `apiKeyEnv` 的那个块内,不会串到下一个 provider),这正是「模型」页显示的名字。
+  于是实测结果与你那一页**逐字一致**:
+  ```
+  ref=DEEPSEEK_API_KEY  → label=DeepSeek                    (官方 provider 在 bundle 里,取内置名)
+  ref=MIXTOKEN_API_KEY  → label=https://api.mixtoken.ai/v1   (你自己把 displayName 写成了 base URL)
+  ```
+  凭据名与「已配置 / 未配置」移进选项的悬停提示(`凭据:… / 供应商:… / 已配置`),信息不丢;
+  余额胶囊的「来源:」也改用这个名字。
+- **没有 displayName 的 provider** 退回显示它自己的 id;连 id 都没有(只在凭据库里出现的名字)才显示凭据名。
+- 「DeepSeek 账号」(OAuth 登录)不进下拉:它不是 API key,官方 `/user/balance` 也不认它 —— README 里写明了理由与去处。
+- 测试 142 → 146:displayName 提取(带引号 / 无 displayName / **不借用下一个 provider 的 displayName**)、
+  标签填充与合并、DOM 测试里断言"下拉文本是模型名、不是凭据名"。
+
 ## [0.9.1] - 2026-09-30
 
 ### 修复:打开「费用统计」整块空白(0.9.0 引入)

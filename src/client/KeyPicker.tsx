@@ -58,16 +58,35 @@ export interface KeyPickerProps {
 }
 
 /**
- * One option's label: the name, its provider when known, and whether it is set.
+ * One option's label: what 「设置 → 模型」 calls this provider, plus a marker when
+ * the reference is not configured.
+ *
+ * The credential's own name (`DEEPSEEK_API_KEY`) is deliberately not the visible
+ * text — the reader picks a MODEL PROVIDER, so the dropdown reads like the model
+ * settings page. The reference stays on the option's tooltip for anyone who
+ * needs to know which credential a row resolves.
  * @param row - one catalog entry.
  * @param tr - translator.
  * @returns the label.
  */
 function optionLabel(row: KeysPayload['refs'][number], tr: Translator): string {
-  const parts = [row.ref]
-  if (row.provider !== undefined && row.provider !== '') parts.push(row.provider)
-  const head = parts.join(' · ')
+  const head = row.label ?? row.ref
   return row.configured ? head : `${head}${tr('stats.key.unconfigured')}`
+}
+
+/**
+ * The tooltip for one option: which credential it is, and where it came from.
+ * @param row - one catalog entry.
+ * @param tr - translator.
+ * @returns the tooltip text.
+ */
+function optionHint(row: KeysPayload['refs'][number], tr: Translator): string {
+  const parts = [tr('stats.key.optionRef', { ref: row.ref })]
+  if (row.provider !== undefined && row.provider !== '') {
+    parts.push(tr('stats.key.optionProvider', { provider: row.provider }))
+  }
+  parts.push(row.configured ? tr('stats.key.optionSet') : tr('stats.key.optionUnset'))
+  return parts.join('\n')
 }
 
 /**
@@ -101,7 +120,7 @@ export function KeyPicker(props: KeyPickerProps): ReactNode {
             — that is exactly the case where the reader has to paste a key. */}
         {rows.length === 0 && <option value="">{tr('stats.key.none')}</option>}
         {rows.map(row => (
-          <option key={row.ref} value={row.ref}>{optionLabel(row, tr)}</option>
+          <option key={row.ref} value={row.ref} title={optionHint(row, tr)}>{optionLabel(row, tr)}</option>
         ))}
         <option value={MANUAL_OPTION}>{tr('stats.key.manual')}</option>
       </select>

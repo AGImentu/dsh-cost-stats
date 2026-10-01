@@ -77,10 +77,40 @@ describe('refsFromConfig', () => {
         api: openai-completions
 `
 
-  it('reads every declared apiKeyEnv with its provider id', () => {
+  it('reads every declared apiKeyEnv with its provider id and display name', () => {
     expect(refsFromConfig(PATCH)).toEqual([
-      { ref: 'MIXTOKEN_API_KEY', provider: 'mixtoken' },
+      // The label is what 「设置 → 模型」 shows for the provider — here a base URL,
+      // because that is what this profile's displayName says.
+      { ref: 'MIXTOKEN_API_KEY', provider: 'mixtoken', label: 'https://api.mixtoken.ai/v1' },
       { ref: 'ANOTHER_KEY', provider: 'another' },
+    ])
+  })
+
+  it('keeps a quoted display name, and takes the provider id when there is none', () => {
+    const text = `providers:
+  quoted:
+    displayName: "My Relay"
+    apiKeyEnv: QUOTED_KEY
+  plain:
+    apiKeyEnv: PLAIN_KEY
+`
+    expect(refsFromConfig(text)).toEqual([
+      { ref: 'QUOTED_KEY', provider: 'quoted', label: 'My Relay' },
+      { ref: 'PLAIN_KEY', provider: 'plain' },
+    ])
+  })
+
+  it('does not borrow a displayName from the following block', () => {
+    const text = `providers:
+  first:
+    apiKeyEnv: FIRST_KEY
+  second:
+    displayName: Second Relay
+    apiKeyEnv: SECOND_KEY
+`
+    expect(refsFromConfig(text)).toEqual([
+      { ref: 'FIRST_KEY', provider: 'first' },
+      { ref: 'SECOND_KEY', provider: 'second', label: 'Second Relay' },
     ])
   })
 
@@ -124,6 +154,35 @@ describe('buildCatalog', () => {
     expect(catalog('set')[0]).toMatchObject({ ref: 'DEEPSEEK_API_KEY', origin: 'default', configured: true })
     expect(catalog('set')[1]).toMatchObject({ ref: 'MIXTOKEN_API_KEY', origin: 'store', provider: 'mixtoken' })
     expect(catalog('set')[2]).toMatchObject({ ref: 'OTHER_KEY', origin: 'config', configured: true })
+  })
+
+  it('labels each entry the way the model settings page names it', () => {
+    const rows = buildCatalog({
+      defaultRef: 'DEEPSEEK_API_KEY',
+      storeRefs: ['MIXTOKEN_API_KEY'],
+      configRefs: [
+        { ref: 'MIXTOKEN_API_KEY', provider: 'mixtoken', label: 'https://api.mixtoken.ai/v1' },
+        { ref: 'OTHER_KEY' },
+      ],
+      envHas: () => false,
+      state: () => 'set',
+    })
+    // The harness default has no readable config file, so its shipped name is
+    // the built-in one; a configured provider takes its own displayName; a
+    // provider without one falls back to the reference itself in the page.
+    expect(rows.map(row => row.label)).toEqual(['DeepSeek', 'https://api.mixtoken.ai/v1', undefined])
+  })
+
+  it('fills in a label discovered after the row was created', () => {
+    const rows = buildCatalog({
+      defaultRef: 'DEEPSEEK_API_KEY',
+      storeRefs: ['MIXTOKEN_API_KEY'],
+      configRefs: [{ ref: 'MIXTOKEN_API_KEY', provider: 'mixtoken', label: 'Mixtoken' }],
+      envHas: () => false,
+      state: () => 'set',
+    })
+    // The store mentioned it first (no label); the config supplies both facts.
+    expect(rows[1]).toMatchObject({ ref: 'MIXTOKEN_API_KEY', origin: 'store', provider: 'mixtoken', label: 'Mixtoken' })
   })
 
   it('reports a reference the service says is not configured', () => {
