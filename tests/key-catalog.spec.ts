@@ -139,22 +139,27 @@ b:
 })
 
 describe('buildCatalog', () => {
-  /** What the page renders, given the evidence. */
-  function catalog(state: 'set' | 'unset' | 'unknown', envHas: (ref: string) => boolean = () => false) {
+  /** What the page renders, given the evidence (signed in unless stated). */
+  function catalog(
+    state: 'set' | 'unset' | 'unknown',
+    envHas: (ref: string) => boolean = () => false,
+    accountSignedIn = true,
+  ) {
     return buildCatalog({
       defaultRef: 'DEEPSEEK_API_KEY',
       storeRefs: ['MIXTOKEN_API_KEY'],
       configRefs: [{ ref: 'MIXTOKEN_API_KEY', provider: 'mixtoken' }, { ref: 'OTHER_KEY' }],
       envHas,
       state: () => state,
+      accountSignedIn,
     })
   }
 
   it('lists the harness models first, then every discovered source', () => {
     expect(catalog('set').map(row => row.ref))
       .toEqual(['deepseek-account', 'DEEPSEEK_API_KEY', 'MIXTOKEN_API_KEY', 'OTHER_KEY'])
-    // DSH's login account: listed so its usage can be filtered, marked as having
-    // no key at all (so the page never tries to query a balance for it).
+    // DSH's login account: offered while signed in, marked as having no API key
+    // (its balance is read through DSH's own account service).
     expect(catalog('set')[0]).toMatchObject({
       ref: 'deepseek-account',
       label: 'DeepSeek 账号',
@@ -168,6 +173,13 @@ describe('buildCatalog', () => {
     expect(catalog('set')[3]).toMatchObject({ ref: 'OTHER_KEY', origin: 'config', configured: true })
   })
 
+  it('drops the login account when it is signed out', () => {
+    // The dropdown mirrors 「设置 → 模型」, where a signed-out account is not a model.
+    const rows = catalog('set', () => false, false)
+    expect(rows.map(row => row.ref)).toEqual(['DEEPSEEK_API_KEY', 'MIXTOKEN_API_KEY', 'OTHER_KEY'])
+    expect(rows.some(row => row.account === true)).toBe(false)
+  })
+
   it('labels each entry the way the model settings page names it', () => {
     const rows = buildCatalog({
       defaultRef: 'DEEPSEEK_API_KEY',
@@ -178,6 +190,7 @@ describe('buildCatalog', () => {
       ],
       envHas: () => false,
       state: () => 'set',
+      accountSignedIn: true,
     })
     // The harness models have no readable config file, so their shipped names are
     // built in; a configured provider takes its own displayName; a provider with
@@ -193,6 +206,7 @@ describe('buildCatalog', () => {
       configRefs: [{ ref: 'MIXTOKEN_API_KEY', provider: 'mixtoken', label: 'Mixtoken' }],
       envHas: () => false,
       state: () => 'set',
+      accountSignedIn: true,
     })
     // The store mentioned it first (no label); the config supplies both facts.
     expect(rows[2]).toMatchObject({ ref: 'MIXTOKEN_API_KEY', origin: 'store', provider: 'mixtoken', label: 'Mixtoken' })
@@ -210,6 +224,7 @@ describe('buildCatalog', () => {
       ],
       envHas: () => false,
       state: () => 'set',
+      accountSignedIn: true,
     })
     expect(rows[1]).toMatchObject({
       ref: 'DEEPSEEK_API_KEY',
@@ -244,6 +259,7 @@ describe('buildCatalog', () => {
       configRefs: [],
       envHas: () => false,
       state: () => 'unknown',
+      accountSignedIn: true,
     })
     expect(rows.map(row => row.ref)).toEqual(['deepseek-account', 'DEEPSEEK_API_KEY'])
   })
@@ -257,6 +273,7 @@ describe('buildCatalog', () => {
       configRefs: [],
       envHas: () => false,
       state: () => 'set',
+      accountSignedIn: true,
     })
     const account = rows.find(row => row.account === true)
     expect(account?.ref).toBe('deepseek-account')

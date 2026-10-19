@@ -2,6 +2,39 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 与语义化版本。
 
+## [0.15.0] - 2026-10-19
+
+### 修复:下拉里的清单是旧的(已删除的 provider、已退出的账号还在)
+
+用户报的现象:把「模型」页里的中转站 provider 删了、把 DeepSeek 账号退出了登录,打开「费用统计」,
+下拉里**仍然**列着 `DeepSeek 账号` 和 `https://api.mixtoken.ai/v1`。这是两个独立的原因:
+
+1. **前端整个页面会话只取一次清单**。`key-store.load()` 里有"取到过就直接返回缓存"的短路,
+   所以重开这一页不会重新拉。**修法**:`load()` 改成**每次都请求**(仍然合并并发、仍然用上一份数据先渲染,
+   所以不会闪、也不会因为一次失败就清空下拉)。这样下拉就真的等于「设置 → 模型」当下的样子。
+2. **账号那条是写死的内置项**,不看登录状态。**修法**:宿主先问账号服务要平台会话
+   (`getPlatformSession()`,实测登录时形如 `{origin, token, userId, requestHeaders}`),
+   **只有拿到非空 token 才把这条列进清单**;退出后它不再出现。测不到服务/取法抛错时按"不列"处理;
+   如果某个 build 没有 `getPlatformSession` 但有 `getBalance`,则保持旧行为(照常列,让余额查询自己报错)。
+
+### 顺带:隐藏账号不能把历史明细变难读
+
+退出登录**不会**让过去那些 `deepseek-account` 的计费项消失(它们是**真实花过的钱**,本机日志里 16 条)。
+所以清单里额外发布了 `providerLabels`(provider id → 显示名,harness 自带的那两条),
+表格的 `模型` 列优先用**可选项**的名字,没有可选项时回退到这张表 —— 于是那些历史行仍然写「DeepSeek 账号」,
+只是不能再单独筛选、也查询不了余额。**统计数字不受影响**:选「全部」时它们照旧计入合计。
+
+### 测试(183 项)
+
+- `tests/key-store.spec.ts`:并发调用只发一次请求、**再次调用会重新取**、请求失败时保留上一份数据;
+  `providerLabels` 参与命名、可选项名字优先于回退表。
+- `tests/key-catalog.spec.ts`:登录时账号排最前;**未登录时不出现**(且不影响其它条目);
+  其余用例补齐 `accountSignedIn` 参数。
+- `tests/account-balance.spec.ts`:新增 `accountSignedIn` 的判定表(有 token → true;token 缺失/空/无会话 → false;
+  取法抛错 → false;没有该方法的 build → 保持可用)。
+- 真机(临时实例,同一份凭据库,未登录):`/cost-stats/keys` 只返回 `DEEPSEEK_API_KEY` 一条,
+  并带 `providerLabels: {"deepseek-account":"DeepSeek 账号","deepseek-official":"DeepSeek"}`。
+
 ## [0.14.0] - 2026-10-01
 
 ### 修复:法定节假日全天按空闲价,此前当成高峰价 → 估算**偏高整整一倍**

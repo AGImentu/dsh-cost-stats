@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   accountServiceOf,
+  accountSignedIn,
   parseAccountBalance,
   readAccountBalance,
   type AccountRequest,
@@ -180,5 +181,47 @@ describe('the balance route\'s account branch', () => {
     await handleBalanceRequest(broken, local, second.res)
     expect(second.body().ok).toBe(true)
     expect(second.body().infos?.[0]?.total).toBe(1.85)
+  })
+})
+
+describe('accountSignedIn', () => {
+  /** A context whose account service answers with the given session. */
+  function contextWithSession(session: unknown): object {
+    return {
+      get: (name: string, strict?: boolean) => (name === 'deepseekAccount' && strict === false
+        ? { getBalance: async () => READY, getPlatformSession: () => session }
+        : undefined),
+    }
+  }
+
+  it('is true while the platform session carries a token', async () => {
+    // Measured shape while signed in.
+    expect(await accountSignedIn(contextWithSession({ origin: 'https://platform.deepseek.com', token: 'x'.repeat(64) }))).toBe(true)
+  })
+
+  it('is false when the token is gone, which is what signing out does', async () => {
+    // After signing out DSH keeps the device record but no platform session.
+    expect(await accountSignedIn(contextWithSession(undefined))).toBe(false)
+    expect(await accountSignedIn(contextWithSession(null))).toBe(false)
+    expect(await accountSignedIn(contextWithSession({ origin: 'https://platform.deepseek.com' }))).toBe(false)
+    expect(await accountSignedIn(contextWithSession({ token: '' }))).toBe(false)
+  })
+
+  it('is false when there is no service, or the lookup throws', async () => {
+    expect(await accountSignedIn({})).toBe(false)
+    expect(await accountSignedIn({
+      get: (name: string, strict?: boolean) => (name === 'deepseekAccount' && strict === false
+        ? { getBalance: async () => READY, getPlatformSession: () => { throw new Error('locked') } }
+        : undefined),
+    })).toBe(false)
+  })
+
+  it('keeps offering the account on a build that cannot report the session', async () => {
+    // No `getPlatformSession`: assume available and let the balance query report
+    // its own outcome — a listed-but-unqueryable model beats a missing feature.
+    const ctx = { get: (name: string, strict?: boolean) => (name === 'deepseekAccount' && strict === false ? { getBalance: async () => READY } : undefined) }
+    expect(await accountSignedIn(ctx)).toBe(true)
+    // …but a service with neither member is not an account service at all.
+    expect(await accountSignedIn({ get: () => ({ unrelated: true }) })).toBe(false)
   })
 })

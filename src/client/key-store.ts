@@ -46,11 +46,17 @@ export function subscribe(listener: (payload: KeysPayload) => void): () => void 
 }
 
 /**
- * Load the catalog once per page, joining concurrent callers.
+ * Load the catalog, joining concurrent callers.
+ *
+ * **Every call fetches.** The catalog mirrors 「设置 → 模型」: a provider can be
+ * added, renamed or deleted, and the reader can sign in or out, between one visit
+ * to this page and the next. A page-session cache made the dropdown show exactly
+ * that staleness (a deleted relay and a signed-out account kept their entries),
+ * so the only entry point refreshes and the *previous* payload merely seeds the
+ * first render (see `snapshot`). Concurrent callers still share one request.
  * @returns the payload (never rejects: a failure is a payload with `ok: false`).
  */
 export function load(): Promise<KeysPayload> {
-  if (catalog !== undefined && catalog.ok) return Promise.resolve(catalog)
   if (inFlight !== undefined) return inFlight
   const pending = fetch(KEYS_ROUTE, { credentials: 'same-origin', headers: { accept: 'application/json' } })
     .then(async (response) => {
@@ -125,15 +131,20 @@ export function rowOf(ref: string, payload: KeysPayload | undefined): KeyRefInfo
  * @returns the label per provider id.
  */
 export function labelByProvider(payload: KeysPayload | undefined): ReadonlyMap<string, string> {
-  const labels = new Map<string, string>()
+  const labels = new Map<string, string>(
+    Object.entries(payload?.providerLabels ?? {}).filter(([, label]) => typeof label === 'string' && label !== ''),
+  )
+  // A selectable entry wins over the fallback table, and among entries the first
+  // (most authoritative) one wins — the catalog lists the harness's own models
+  // first, and two credentials sharing one provider id are indistinguishable.
+  const fromEntries = new Map<string, string>()
   for (const row of payload?.refs ?? []) {
     const label = row.label ?? row.ref
     for (const provider of row.providers ?? []) {
-      // First writer wins: the harness entries come first in the catalog, and two
-      // credentials sharing one provider id are indistinguishable anyway.
-      if (!labels.has(provider)) labels.set(provider, label)
+      if (!fromEntries.has(provider)) fromEntries.set(provider, label)
     }
   }
+  for (const [provider, label] of fromEntries) labels.set(provider, label)
   return labels
 }
 

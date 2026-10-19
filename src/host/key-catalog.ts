@@ -25,6 +25,7 @@ import { readFile, readdir, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { API_KEY_REF, describeApiKey, isApiKeyRef } from './api-key.ts'
+import { accountSignedIn } from './account-balance.ts'
 import type { KeyRefInfo, KeyRefOrigin, KeysPayload } from '../balance.ts'
 
 /** Structural keys of the credential store, never credentials themselves. */
@@ -208,6 +209,13 @@ export interface CatalogInput {
   readonly envHas: (ref: string) => boolean
   /** The service's answer per reference, when it can answer. */
   readonly state: (ref: string) => 'set' | 'unset' | 'unknown'
+  /**
+   * Whether DSH's login account is signed in, so offering it makes sense.
+   *
+   * Defaults to `false`: a host we cannot ask does not get a signed-in account
+   * entry, which matches 「设置 → 模型」 (a signed-out account is not a model).
+   */
+  readonly accountSignedIn?: boolean
 }
 
 /**
@@ -264,7 +272,6 @@ export function buildCatalog(input: CatalogInput): KeyRefInfo[] {
       ...(providers.length === 0 ? {} : { providers }),
     })
   }
-  /** A harness model that owns no credential: listed for filtering only. */
   /** The login account: no API key behind it, but its balance is readable. */
   const addAccount = (model: (typeof HARNESS_MODELS)[number]): void => {
     if (rows.some(row => row.ref === model.ref)) return
@@ -279,11 +286,33 @@ export function buildCatalog(input: CatalogInput): KeyRefInfo[] {
     })
   }
 
-  for (const model of HARNESS_MODELS) if (model.account === true) addAccount(model)
+  // The account is offered only while it is signed in — the dropdown mirrors
+  // 「设置 → 模型」, and a signed-out account is not a model (0.15.0: it used to be
+  // listed unconditionally, which read as "stale data").
+  if (input.accountSignedIn === true) {
+    for (const model of HARNESS_MODELS) if (model.account === true) addAccount(model)
+  }
   add(input.defaultRef, 'default')
   for (const ref of input.storeRefs) add(ref, 'store')
   for (const entry of input.configRefs) add(entry.ref, 'config', entry.provider, entry.label)
   return rows
+}
+
+/**
+ * The display name of every provider id the harness ships, whether or not that
+ * model is currently selectable.
+ *
+ * Published next to the catalog so the table's 模型 column can keep naming rows
+ * that were really billed — a signed-out account's past usage does not stop
+ * existing just because the account can no longer be queried.
+ * @returns provider id → label.
+ */
+export function providerLabels(): Record<string, string> {
+  const labels: Record<string, string> = {}
+  for (const model of HARNESS_MODELS) {
+    for (const provider of model.providers) labels[provider] = model.label
+  }
+  return labels
 }
 
 /** The resolved location of DSH's private files. */
@@ -363,6 +392,8 @@ export async function keysPayload(ctx: object): Promise<KeysPayload> {
   await Promise.all([...candidates].map(async (ref) => {
     asked.set(ref, await describeApiKey(ctx, ref))
   }))
+  // Sign-in state is asked in parallel: it decides whether the account is offered.
+  const signedIn = await accountSignedIn(ctx)
 
   const refs = buildCatalog({
     defaultRef: API_KEY_REF,
@@ -370,6 +401,7 @@ export async function keysPayload(ctx: object): Promise<KeysPayload> {
     configRefs: evidence.configRefs,
     envHas: ref => (process.env[ref] ?? '').length > 0,
     state,
+    accountSignedIn: signedIn,
   })
-  return { ok: true, default: API_KEY_REF, refs }
+  return { ok: true, default: API_KEY_REF, refs, providerLabels: providerLabels() }
 }

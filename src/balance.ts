@@ -147,8 +147,22 @@ export interface KeysPayload {
   readonly ok: boolean
   /** The reference used when the reader picks nothing. */
   readonly default: string
-  /** Every credential that can be selected, in display order. */
+  /**
+   * Every model that can be selected right now, in display order.
+   *
+   * This mirrors 「设置 → 模型」 as it is at request time: a provider that was
+   * deleted is gone, and the login account appears only while it is signed in.
+   */
   readonly refs: readonly KeyRefInfo[]
+  /**
+   * Display names for provider ids the plugin knows, even when that model is not
+   * currently selectable.
+   *
+   * The table's 模型 column must keep naming rows that were really billed — a
+   * signed-out account's past usage still exists — so labels are published
+   * separately from the pickable entries.
+   */
+  readonly providerLabels?: Readonly<Record<string, string>>
   /** Present only when the catalog could not be built (the default still is). */
   readonly message?: string
 }

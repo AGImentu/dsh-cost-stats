@@ -44,8 +44,8 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-describe('the catalog cache', () => {
-  it('fetches once per page and joins concurrent callers', async () => {
+describe('the catalog fetch', () => {
+  it('joins concurrent callers but re-fetches on every visit', async () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify(catalog()), {
       status: 200,
       headers: { 'content-type': 'application/json' },
@@ -55,8 +55,22 @@ describe('the catalog cache', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(first).toBe(second)
     expect(String((fetchMock.mock.calls[0] as unknown[])[0])).toBe('/cost-stats/keys')
+    // The dropdown mirrors 「设置 → 模型」, so a later visit must not replay a stale
+    // list: providers get deleted and the account gets signed out between visits.
     await keyStore.load()
-    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps the previous payload available while the next visit loads', async () => {
+    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify(catalog()), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    })) as unknown as typeof fetch
+    await keyStore.load()
+    expect(keyStore.snapshot()?.refs).toHaveLength(2)
+    // A visit that fails outright must not blank the dropdown on screen.
+    globalThis.fetch = vi.fn(async () => { throw new Error('offline') }) as unknown as typeof fetch
+    expect(keyStore.snapshot()?.refs).toHaveLength(2)
   })
 
   it('degrades to an empty catalog instead of rejecting', async () => {
@@ -138,6 +152,30 @@ describe('the model filter', () => {
     const labels = keyStore.labelByProvider(shared)
     expect(labels.get('p1')).toBe('First')
     expect(labels.get('p2')).toBe('Second')
+  })
+
+  it('still names a provider whose model is not selectable any more', () => {
+    // A signed-out account keeps its historical rows, so the host publishes its
+    // label separately from the pickable entries.
+    const payload: KeysPayload = {
+      ok: true,
+      default: 'DEEPSEEK_API_KEY',
+      refs: [{ ref: 'DEEPSEEK_API_KEY', label: 'DeepSeek', configured: true, origin: 'default', providers: ['deepseek-official'] }],
+      providerLabels: { 'deepseek-official': 'DeepSeek', 'deepseek-account': 'DeepSeek 账号' },
+    }
+    const labels = keyStore.labelByProvider(payload)
+    expect(labels.get('deepseek-account')).toBe('DeepSeek 账号')
+    expect(labels.get('deepseek-official')).toBe('DeepSeek')
+  })
+
+  it('lets a selectable entry override the fallback label of the same provider', () => {
+    const payload: KeysPayload = {
+      ok: true,
+      default: 'DEEPSEEK_API_KEY',
+      refs: [{ ref: 'DEEPSEEK_API_KEY', label: 'From entry', configured: true, origin: 'default', providers: ['deepseek-official'] }],
+      providerLabels: { 'deepseek-official': 'From table' },
+    }
+    expect(keyStore.labelByProvider(payload).get('deepseek-official')).toBe('From entry')
   })
 })
 

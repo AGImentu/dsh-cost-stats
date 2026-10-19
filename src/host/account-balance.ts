@@ -41,6 +41,12 @@ interface AccountBalanceLike {
   readonly bonusWallets?: unknown
 }
 
+/** What `getPlatformSession` answers while signed in (measured shape). */
+interface PlatformSessionLike {
+  readonly origin?: unknown
+  readonly token?: unknown
+}
+
 /** The account service slice this plugin uses. */
 export interface AccountServiceLike {
   /**
@@ -52,6 +58,11 @@ export interface AccountServiceLike {
   getBalance?(request: AccountRequest): Promise<unknown> | unknown
   /** Sign-in status and the platform links, when the service offers them. */
   getState?(): unknown
+  /**
+   * The platform session of the signed-in account.
+   * @returns `{ origin, token, … }` while signed in; undefined/other when not.
+   */
+  getPlatformSession?(): Promise<unknown> | unknown
 }
 
 /** The request object the service expects. */
@@ -216,5 +227,36 @@ export async function readAccountBalance(ctx: object, now: () => number = Date.n
       account: true,
       ref: ACCOUNT_CHOICE_ID,
     }
+  }
+}
+
+/**
+ * Whether the login account is signed in right now.
+ *
+ * Signing out must take the entry out of the page's model dropdown — that dropdown
+ * mirrors 「设置 → 模型」, and a signed-out account is not a model you can pick. The
+ * signal is the platform session's token: measured while signed in, the service
+ * answers `{ origin, token, userId, requestHeaders }`, and after signing out the
+ * token is gone.
+ *
+ * Degradation is deliberate: a build whose service has `getBalance` but no
+ * `getPlatformSession` cannot answer the question, so the entry is kept and the
+ * balance query reports its own failure — better a listed-but-unqueryable model
+ * than a silently missing feature.
+ * @param ctx - host context.
+ * @returns whether the account should be offered.
+ */
+export async function accountSignedIn(ctx: object): Promise<boolean> {
+  const service = accountServiceOf(ctx)
+  if (service === undefined) return false
+  if (service.getPlatformSession === undefined) return service.getBalance !== undefined
+  try {
+    const session = await service.getPlatformSession() as PlatformSessionLike | undefined
+    const token = session?.token
+    return typeof token === 'string' && token !== ''
+  } catch {
+    // A throwing lookup means "cannot tell", which for the account means "do not
+    // offer it": the value of offering it is exactly the balance.
+    return false
   }
 }
