@@ -133,7 +133,12 @@ export const STYLES = `
   padding: 16px;
   border: 0;
   border-radius: 12px;
-  background: var(--dsw-specific-menu);
+  /* Opaque on purpose (0.16.0). DSH's menu surface is translucent by design and
+     the host pairs it with backdrop-filter: var(--dsw-menu-backdrop-filter);
+     a plugin popover that copies only the colour lets the chat text behind show
+     through — measured: that is exactly what made this panel unreadable. Using
+     the base surface keeps it legible in both themes and needs no blur support. */
+  background: var(--dsw-alias-bg-base, #fff);
   --dsw-elevation-stroke-color: var(--dsw-alias-border-l1);
   box-shadow: var(--dsw-elevation-prominent);
   font-size: 12px;
@@ -443,7 +448,8 @@ export const STYLES = `
   color: var(--dsw-alias-label-primary);
 }
 
-/* Calendar popover: the same menu skin as the chip's stat panel. */
+/* Calendar popover: same opaque skin as the chip's stat panel (0.16.0 — see the
+   note in the panel rule: a bare translucent menu fill let the table show through). */
 .${CLASS.pickerPanel} {
   position: fixed;
   z-index: 1100;
@@ -451,7 +457,7 @@ export const STYLES = `
   padding: 10px;
   border: 0;
   border-radius: 12px;
-  background: var(--dsw-specific-menu);
+  background: var(--dsw-alias-bg-base, #fff);
   --dsw-elevation-stroke-color: var(--dsw-alias-border-l1);
   box-shadow: var(--dsw-elevation-prominent);
   color: var(--dsw-alias-label-secondary);
